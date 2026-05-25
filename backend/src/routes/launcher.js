@@ -2,6 +2,11 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const workupload = require("../../../lib/workupload");
+const {
+  normalizeDownloadUrl,
+  DEFAULT_MC_PACK_URL,
+  DEFAULT_MOD_JAR_URL,
+} = require("../../../lib/download-url");
 
 const router = express.Router();
 const siteRoot = path.resolve(__dirname, "..", "..", "..");
@@ -11,9 +16,6 @@ const launcherBuildDirs = [
 ];
 const launcherUploadDir = path.join(siteRoot, "uploads", "launcher");
 const gameUploadDir = path.join(siteRoot, "uploads", "game");
-
-const DEFAULT_PACK_WU = "https://workupload.com/file/DfDbfTtSUsz";
-const DEFAULT_MOD_WU = "https://workupload.com/file/BLmQgMPqCXW";
 
 function findLauncherExe() {
   const fromDist = findLocalLauncherExe();
@@ -76,12 +78,12 @@ function apiBase(req) {
   return `${req.protocol}://${req.get("host")}/api/launcher`;
 }
 
-function manifestUrl(req, envKey, defaultWu, apiPath, extRe, localNames) {
-  const env = String(process.env[envKey] || "").trim();
+function manifestUrl(req, envKey, defaultDirect, apiPath, extRe, localNames) {
+  const env = normalizeDownloadUrl(String(process.env[envKey] || "").trim());
   if (env && workupload.isDirectDownloadUrl(env)) return env;
   if (findGameFile(localNames, extRe)) return `${apiBase(req)}${apiPath}`;
   if (env) return `${apiBase(req)}${apiPath}`;
-  return `${apiBase(req)}${apiPath}`;
+  return defaultDirect;
 }
 
 async function serveGameDownload(req, res, opts) {
@@ -90,8 +92,8 @@ async function serveGameDownload(req, res, opts) {
     return res.download(local.fullPath, local.name);
   }
 
-  const envUrl = String(process.env[opts.envKey] || "").trim();
-  const source = envUrl || opts.defaultWu;
+  const envUrl = normalizeDownloadUrl(String(process.env[opts.envKey] || "").trim());
+  const source = envUrl || opts.defaultDirect;
 
   if (workupload.isDirectDownloadUrl(source)) {
     return res.redirect(302, source);
@@ -138,18 +140,18 @@ router.get("/manifest", (req, res) => {
     minecraftPackUrl: manifestUrl(
       req,
       "MC_PACK_URL",
-      DEFAULT_PACK_WU,
+      DEFAULT_MC_PACK_URL,
       "/download-pack",
       /\.(zip|rar|7z)$/i,
-      ["minecraft-pack.zip", "pack.zip", "client.zip"]
+      ["minecraft-pack.zip", "pack.zip", "client.zip", "1.21.4.zip"]
     ),
     modJarUrl: manifestUrl(
       req,
       "MOD_JAR_URL",
-      DEFAULT_MOD_WU,
+      DEFAULT_MOD_JAR_URL,
       "/download-mod",
       /\.jar$/i,
-      ["mod.jar", "corpseclient-mod.jar", "client-mod.jar"]
+      ["mod.jar", "corpseclient-mod.jar", "corpse-1.0.0.jar"]
     ),
   });
 });
@@ -160,7 +162,7 @@ router.get("/download-pack", (req, res) => {
   }
   return serveGameDownload(req, res, {
     envKey: "MC_PACK_URL",
-    defaultWu: DEFAULT_PACK_WU,
+    defaultDirect: DEFAULT_MC_PACK_URL,
     localNames: ["minecraft-pack.zip", "pack.zip", "client.zip"],
     extRe: /\.(zip|rar|7z)$/i,
     hintName: "сборку Minecraft (zip)",
@@ -173,7 +175,7 @@ router.get("/download-mod", (req, res) => {
   }
   return serveGameDownload(req, res, {
     envKey: "MOD_JAR_URL",
-    defaultWu: DEFAULT_MOD_WU,
+    defaultDirect: DEFAULT_MOD_JAR_URL,
     localNames: ["mod.jar", "corpseclient-mod.jar", "client-mod.jar"],
     extRe: /\.jar$/i,
     hintName: "мод (.jar)",

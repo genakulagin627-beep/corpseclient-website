@@ -1,7 +1,7 @@
 let config = null;
 
 function versionUsesCloudInstall(v) {
-  return !!(v && (v.cloudInstall || v.id === '1.16.5'));
+  return !!(v && v.cloudInstall);
 }
 let authState = null;
 

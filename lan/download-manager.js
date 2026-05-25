@@ -13,9 +13,15 @@ const {
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
+const {
+  DEFAULT_MC_PACK_URL,
+  DEFAULT_MOD_JAR_URL,
+  normalizeDownloadUrl,
+} = require('../lib/download-url');
+
 const DEFAULT_MANIFEST = {
-  minecraftPackUrl: 'https://workupload.com/file/DfDbfTtSUsz',
-  modJarUrl: 'https://workupload.com/file/BLmQgMPqCXW',
+  minecraftPackUrl: DEFAULT_MC_PACK_URL,
+  modJarUrl: DEFAULT_MOD_JAR_URL,
 };
 
 function emitProgress(onProgress, patch) {
@@ -251,8 +257,12 @@ function findModsDir(rootDir) {
 
 async function prepareInstance(manifest, onProgress, opts = {}) {
   const installDir = randomInstallDir();
-  const packUrl = String(manifest.minecraftPackUrl || DEFAULT_MANIFEST.minecraftPackUrl).trim();
-  const modUrl = String(manifest.modJarUrl || DEFAULT_MANIFEST.modJarUrl).trim();
+  const packUrl = normalizeDownloadUrl(
+    String(manifest.minecraftPackUrl || DEFAULT_MANIFEST.minecraftPackUrl).trim()
+  );
+  const modUrl = normalizeDownloadUrl(
+    String(manifest.modJarUrl || DEFAULT_MANIFEST.modJarUrl).trim()
+  );
   const dlOpts = { authToken: opts.authToken };
 
   const packTmp = path.join(installDir, '_pack_dl.bin');

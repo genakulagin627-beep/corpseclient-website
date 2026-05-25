@@ -43,10 +43,10 @@ const defaultConfig = {
   versions: [
     {
       id: '1.16.5',
-      title: 'Minecraft 1.16.5 Fabric',
-      tag: 'Cloud',
-      active: true,
-      cloudInstall: true,
+      title: 'Minecraft 1.16.5',
+      tag: 'Legacy',
+      active: false,
+      cloudInstall: false,
       kind: 'exe',
       path: '',
       cardImage: 'assets/ikon/fon/1.16.5.png',
@@ -54,9 +54,10 @@ const defaultConfig = {
     },
     {
       id: '1.21.4',
-      title: 'Minecraft 1.21.4',
-      tag: 'Stable',
-      active: false,
+      title: 'Minecraft 1.21.4 Fabric',
+      tag: 'Cloud',
+      active: true,
+      cloudInstall: true,
       kind: 'exe',
       path: '',
       cardImage: 'assets/ikon/fon/1.21.4.png',
@@ -106,10 +107,10 @@ function mergeVersions(savedVersions) {
     return {
       ...def,
       ...saved,
-      cloudInstall:
-        saved.cloudInstall !== undefined ? !!saved.cloudInstall : !!def.cloudInstall,
-      tag: saved.tag || def.tag,
-      title: saved.title || def.title,
+      cloudInstall: !!def.cloudInstall,
+      active: saved.active !== undefined ? !!saved.active : !!def.active,
+      tag: def.tag || saved.tag,
+      title: def.title || saved.title,
     };
   });
   for (const def of defaultConfig.versions) {
@@ -119,7 +120,7 @@ function mergeVersions(savedVersions) {
 }
 
 function versionUsesCloudInstall(v) {
-  return !!(v && (v.cloudInstall || v.id === '1.16.5'));
+  return !!(v && v.cloudInstall);
 }
 
 function getConfig() {
