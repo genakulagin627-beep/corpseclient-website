@@ -265,20 +265,41 @@ async function prepareInstance(manifest, onProgress, opts = {}) {
   );
   const dlOpts = { authToken: opts.authToken };
 
-  const packTmp = path.join(installDir, '_pack_dl.bin');
+  const packExt = /\.zip(\?|$)/i.test(packUrl) ? '.zip' : '.bin';
+  const packTmp = path.join(installDir, `_pack_dl${packExt}`);
   await downloadUrlToFile(packUrl, packTmp, 'Скачивание Minecraft Fabric…', onProgress, dlOpts);
 
-  const head = Buffer.alloc(4);
+  const head = Buffer.alloc(256);
   const fd = fs.openSync(packTmp, 'r');
-  fs.readSync(fd, head, 0, 4, 0);
+  fs.readSync(fd, head, 0, 256, 0);
   fs.closeSync(fd);
   const isZip = head[0] === 0x50 && head[1] === 0x4b;
+  const sniff = head.slice(0, 120).toString('utf8').toLowerCase();
+  const looksHtml =
+    head[0] === 0x3c ||
+    (head[0] === 0xef && head[1] === 0xbb) ||
+    sniff.includes('<!doctype') ||
+    sniff.includes('<html');
+
+  if (looksHtml) {
+    try {
+      fs.unlinkSync(packTmp);
+    } catch (_) {}
+    throw new Error(
+      'Скачана страница вместо zip. Проверь MC_PACK_URL на Render (Dropbox: dl=1).'
+    );
+  }
 
   if (isZip) {
     emitProgress(onProgress, { phase: 'Распаковка…', received: 0, total: 0, percent: -1 });
-    await extractZipWin(packTmp, installDir);
+    let packZip = packTmp;
+    if (!/\.zip$/i.test(packTmp)) {
+      packZip = path.join(installDir, '_pack_dl.zip');
+      fs.renameSync(packTmp, packZip);
+    }
+    await extractZipWin(packZip, installDir);
     try {
-      fs.unlinkSync(packTmp);
+      fs.unlinkSync(packZip);
     } catch (_) {}
   } else {
     const ext = packUrl.toLowerCase().includes('.jar') ? '.jar' : '.exe';
