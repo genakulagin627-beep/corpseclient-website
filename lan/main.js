@@ -503,7 +503,9 @@ app.whenReady().then(() => {
     if (versionUsesCloudInstall(v)) {
       try {
         const manifest = await fetchLauncherManifest();
-        const prepared = await prepareInstance(manifest, sendDownloadProgress);
+        const prepared = await prepareInstance(manifest, sendDownloadProgress, {
+          authToken: getAuthToken(),
+        });
         return launchPrepared(prepared, access, v);
       } catch (e) {
         sendDownloadProgress({ phase: 'Ошибка', received: 0, total: 0, percent: 0 });

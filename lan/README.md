@@ -10,10 +10,14 @@ Electron-лаунчер, подключённый к сайту **https://corpse
 - Прогресс загрузки на экране (фаза, байты, %)
 - Сессия для чита — `inprotect-session.json` + подпись HMAC
 
-Ссылки по умолчанию (можно переопределить на Render: `MC_PACK_URL`, `MOD_JAR_URL`):
+Загрузка идёт через API сервера (`/api/launcher/download-pack` и `download-mod`), не напрямую с workupload.
 
-- Сборка: https://workupload.com/file/DfDbfTtSUsz  
-- Мод: https://workupload.com/file/BLmQgMPqCXW
+**Если ошибка workupload / «прямая ссылка»** — на Render задай **прямые** URL (файл .zip / .jar), не страницу workupload:
+
+- `MC_PACK_URL` — ссылка на zip сборки  
+- `MOD_JAR_URL` — ссылка на mod.jar  
+
+Или залей на сервер в `uploads/game/`: `minecraft-pack.zip` и `mod.jar`.
 
 ## Запуск
 

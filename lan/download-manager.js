@@ -5,6 +5,10 @@ const http = require('http');
 const https = require('https');
 const { spawn } = require('child_process');
 const { app } = require('electron');
+const {
+  resolveWorkuploadDownloadUrl,
+  isDirectDownloadUrl,
+} = require('../lib/workupload');
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
@@ -26,7 +30,7 @@ function randomInstallDir() {
   return dir;
 }
 
-function fetchWithRedirects(url, maxRedirects = 10) {
+function fetchWithRedirects(url, maxRedirects = 12, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     if (maxRedirects < 0) return reject(new Error('too_many_redirects'));
     let parsed;
@@ -43,6 +47,7 @@ function fetchWithRedirects(url, maxRedirects = 10) {
           'User-Agent': UA,
           Accept: '*/*',
           Referer: 'https://workupload.com/',
+          ...extraHeaders,
         },
       },
       (res) => {
@@ -50,66 +55,49 @@ function fetchWithRedirects(url, maxRedirects = 10) {
         if ([301, 302, 303, 307, 308].includes(code) && res.headers.location) {
           res.resume();
           const next = new URL(res.headers.location, parsed).href;
-          return resolve(fetchWithRedirects(next, maxRedirects - 1));
+          const nextHeaders = { ...extraHeaders };
+          if (new URL(next).host !== parsed.host) {
+            delete nextHeaders.Authorization;
+          }
+          return resolve(fetchWithRedirects(next, maxRedirects - 1, nextHeaders));
         }
         resolve(res);
       }
     );
     req.on('error', reject);
-    req.setTimeout(120000, () => {
+    req.setTimeout(180000, () => {
       req.destroy(new Error('timeout'));
     });
   });
 }
 
-async function resolveWorkuploadUrl(pageUrl) {
-  const candidates = [
-    pageUrl,
-    pageUrl.replace('/file/', '/download/'),
-    pageUrl.replace('/file/', '/start/'),
-  ];
-  for (const u of candidates) {
-    try {
-      const res = await fetchWithRedirects(u);
-      const ct = String(res.headers['content-type'] || '').toLowerCase();
-      if (
-        ct.includes('application/zip') ||
-        ct.includes('application/java-archive') ||
-        ct.includes('application/octet-stream') ||
-        ct.includes('application/x-java-archive')
-      ) {
-        return { res, finalUrl: res.responseUrl || u };
+async function readJsonErrorBody(res) {
+  const chunks = [];
+  let total = 0;
+  const text = await new Promise((resolve, reject) => {
+    res.on('data', (c) => {
+      total += c.length;
+      if (total > 65536) {
+        res.destroy();
+        return reject(new Error('error_body_too_large'));
       }
-      const chunks = [];
-      let total = 0;
-      const html = await new Promise((resolve, reject) => {
-        res.on('data', (c) => {
-          total += c.length;
-          if (total > 2_000_000) {
-            res.destroy();
-            return reject(new Error('html_too_large'));
-          }
-          chunks.push(c);
-        });
-        res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-        res.on('error', reject);
-      });
-      const m =
-        html.match(/href="(https?:\/\/[^"]+(?:download|file)[^"]*)"/i) ||
-        html.match(/href="(\/download\/[^"]+)"/i);
-      if (m) {
-        const href = m[1].startsWith('http') ? m[1] : `https://workupload.com${m[1]}`;
-        const res2 = await fetchWithRedirects(href);
-        const ct2 = String(res2.headers['content-type'] || '').toLowerCase();
-        if (!ct2.includes('text/html')) {
-          return { res: res2, finalUrl: href };
-        }
-      }
-    } catch (_) {
-      /* try next */
-    }
+      chunks.push(c);
+    });
+    res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    res.on('error', reject);
+  });
+  try {
+    const j = JSON.parse(text);
+    return j.message || j.hint || j.error || text.slice(0, 200);
+  } catch {
+    return text.slice(0, 200);
   }
-  throw new Error('Не удалось получить прямую ссылку на файл (workupload).');
+}
+
+async function resolveWorkuploadUrl(pageUrl) {
+  const { downloadUrl } = await resolveWorkuploadDownloadUrl(pageUrl);
+  const res = await fetchWithRedirects(downloadUrl);
+  return { res, finalUrl: downloadUrl };
 }
 
 function formatBytes(n) {
@@ -148,19 +136,37 @@ function downloadResponseToFile(res, destPath, label, onProgress) {
   });
 }
 
-async function downloadUrlToFile(sourceUrl, destPath, label, onProgress) {
+async function downloadUrlToFile(sourceUrl, destPath, label, onProgress, opts = {}) {
   emitProgress(onProgress, { phase: label, received: 0, total: 0, percent: 0 });
+  const headers = {};
+  const token = String(opts.authToken || '').trim();
+  if (token && /\/api\/launcher\/download-(pack|mod)/i.test(sourceUrl)) {
+    headers.Authorization = `Bearer ${token}`;
+  }
   let res;
-  if (/workupload\.com/i.test(sourceUrl)) {
+  if (/workupload\.com\/file\//i.test(sourceUrl)) {
     const resolved = await resolveWorkuploadUrl(sourceUrl);
     res = resolved.res;
+  } else if (isDirectDownloadUrl(sourceUrl)) {
+    res = await fetchWithRedirects(sourceUrl, 12, headers);
   } else {
-    res = await fetchWithRedirects(sourceUrl);
+    res = await fetchWithRedirects(sourceUrl, 12, headers);
   }
   const code = res.statusCode || 0;
+  if (code === 502 || code === 503) {
+    const msg = await readJsonErrorBody(res);
+    throw new Error(msg || `Сервер не отдал файл (${code})`);
+  }
   if (code >= 400) {
     res.resume();
     throw new Error(`Ошибка загрузки (${code})`);
+  }
+  const ct = String(res.headers['content-type'] || '').toLowerCase();
+  if (ct.includes('text/html') && !/\/api\/launcher\//i.test(sourceUrl)) {
+    res.resume();
+    throw new Error(
+      'Получена HTML-страница вместо файла. Задай на Render прямые MC_PACK_URL / MOD_JAR_URL или залей файлы в uploads/game/.'
+    );
   }
   return downloadResponseToFile(res, destPath, label, onProgress);
 }
@@ -243,13 +249,14 @@ function findModsDir(rootDir) {
   return guessed;
 }
 
-async function prepareInstance(manifest, onProgress) {
+async function prepareInstance(manifest, onProgress, opts = {}) {
   const installDir = randomInstallDir();
   const packUrl = String(manifest.minecraftPackUrl || DEFAULT_MANIFEST.minecraftPackUrl).trim();
   const modUrl = String(manifest.modJarUrl || DEFAULT_MANIFEST.modJarUrl).trim();
+  const dlOpts = { authToken: opts.authToken };
 
   const packTmp = path.join(installDir, '_pack_dl.bin');
-  await downloadUrlToFile(packUrl, packTmp, 'Скачивание Minecraft Fabric…', onProgress);
+  await downloadUrlToFile(packUrl, packTmp, 'Скачивание Minecraft Fabric…', onProgress, dlOpts);
 
   const head = Buffer.alloc(4);
   const fd = fs.openSync(packTmp, 'r');
@@ -271,7 +278,7 @@ async function prepareInstance(manifest, onProgress) {
 
   const modsDir = findModsDir(installDir);
   const modDest = path.join(modsDir, 'corpseclient-mod.jar');
-  await downloadUrlToFile(modUrl, modDest, 'Скачивание мода…', onProgress);
+  await downloadUrlToFile(modUrl, modDest, 'Скачивание мода…', onProgress, dlOpts);
 
   const launchPath = findLaunchExecutable(installDir);
   if (!launchPath) {
