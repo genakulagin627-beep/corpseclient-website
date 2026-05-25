@@ -32,8 +32,18 @@ API по умолчанию: `https://corpseclient.onrender.com/api`
 
 ## Сборка exe (для кнопки «Скачать лаунчер» на сайте)
 
+**Перед сборкой закрой лаунчер** (`npm start` / окно Electron).
+
 ```bash
 npm run dist
 ```
 
-Скопируй `lan/dist/Launcher-*.exe` в `website/uploads/launcher/` или задай `LAUNCHER_DOWNLOAD_URL` на Render.
+Скрипт `predist` сам завершит `electron.exe` и очистит папку `dist/`.
+
+Скопируй `lan/release/Launcher-*.exe` в `website/uploads/launcher/` или задай `LAUNCHER_DOWNLOAD_URL` на Render.
+
+Старая папка `lan/dist/` можно удалить вручную, когда ничего не держит `app.asar` (закрой Cursor/проводник в этой папке).
+
+## «Путь не задан» при Play
+
+Старая сохранённая конфигурация без `cloudInstall`. Перезапусти лаунчер после обновления — конфиг подтянется сам. Для 1.16.5 путь в настройках **не нужен**: идёт загрузка с workupload.

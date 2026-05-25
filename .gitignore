@@ -9,6 +9,8 @@ node_modules/
 dist/
 **/dist/
 lan/dist/
+lan/dist_backup_*/
+lan/release/
 
 # Secrets & local env
 .env

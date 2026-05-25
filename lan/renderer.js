@@ -1,4 +1,8 @@
 let config = null;
+
+function versionUsesCloudInstall(v) {
+  return !!(v && (v.cloudInstall || v.id === '1.16.5'));
+}
 let authState = null;
 
 function $(id) {
@@ -296,7 +300,7 @@ function renderCards() {
       }
       const id = btn.getAttribute('data-version');
       const v = (config.versions || []).find((x) => x.id === id);
-      if (v && v.cloudInstall) {
+      if (v && versionUsesCloudInstall(v)) {
         showDownloadOverlay(true);
         hideLoader();
         try {
@@ -385,16 +389,22 @@ function renderSettingsForm() {
     block.className = 'setting-block';
     block.dataset.versionId = v.id;
     const checked = v.active || (!hasAccent && i === 0);
+    const cloud = versionUsesCloudInstall(v);
     block.innerHTML = `
       <h3>${escapeHtml(v.title || v.id)}</h3>
-      <div class="field-row">
+      ${
+        cloud
+          ? `<p class="hint">Облачный запуск: сборка и мод скачиваются автоматически при Play. Путь вручную не нужен.</p>`
+          : ''
+      }
+      <div class="field-row ${cloud ? 'hidden' : ''}">
         <label>Тип запуска</label>
         <select class="in-kind">
           <option value="exe" ${v.kind !== 'jar' ? 'selected' : ''}>EXE (файл клиента)</option>
           <option value="jar" ${v.kind === 'jar' ? 'selected' : ''}>JAR (java -jar)</option>
         </select>
       </div>
-      <div class="field-row">
+      <div class="field-row ${cloud ? 'hidden' : ''}">
         <label>Полный путь к файлу</label>
         <input type="text" class="in-path" value="${escapeAttr(v.path || '')}" placeholder="C:\\Games\\client.exe" />
       </div>
@@ -465,11 +475,15 @@ function collectSettingsFromForm() {
   blocks.forEach((block) => {
     const id = block.dataset.versionId;
     const orig = (config.versions || []).find((x) => x.id === id) || {};
+    const cloud = versionUsesCloudInstall(orig);
+    const kindEl = block.querySelector('.in-kind');
+    const pathEl = block.querySelector('.in-path');
     versions.push({
       ...orig,
       id,
-      kind: block.querySelector('.in-kind').value === 'jar' ? 'jar' : 'exe',
-      path: block.querySelector('.in-path').value.trim(),
+      cloudInstall: orig.cloudInstall ?? cloud,
+      kind: kindEl && kindEl.value === 'jar' ? 'jar' : orig.kind || 'exe',
+      path: pathEl ? pathEl.value.trim() : orig.path || '',
       cardImage: block.querySelector('.in-img').value.trim(),
       integritySha256: (block.querySelector('.in-sha')?.value || '').trim(),
       active: accentId === id,

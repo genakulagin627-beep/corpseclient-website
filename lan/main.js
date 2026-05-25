@@ -96,23 +96,53 @@ function normalizeApiBase(url) {
   return u;
 }
 
+function mergeVersions(savedVersions) {
+  const defaultsById = Object.fromEntries(defaultConfig.versions.map((v) => [v.id, { ...v }]));
+  const list =
+    Array.isArray(savedVersions) && savedVersions.length ? savedVersions : defaultConfig.versions;
+  const merged = list.map((saved) => {
+    const def = defaultsById[saved?.id];
+    if (!def) return { ...saved };
+    return {
+      ...def,
+      ...saved,
+      cloudInstall:
+        saved.cloudInstall !== undefined ? !!saved.cloudInstall : !!def.cloudInstall,
+      tag: saved.tag || def.tag,
+      title: saved.title || def.title,
+    };
+  });
+  for (const def of defaultConfig.versions) {
+    if (!merged.some((v) => v.id === def.id)) merged.push({ ...def });
+  }
+  return merged;
+}
+
+function versionUsesCloudInstall(v) {
+  return !!(v && (v.cloudInstall || v.id === '1.16.5'));
+}
+
 function getConfig() {
   const raw = store.get('config');
-  if (!raw || typeof raw !== 'object') return { ...defaultConfig };
+  if (!raw || typeof raw !== 'object') {
+    return { ...defaultConfig, versions: mergeVersions(null) };
+  }
   const merged = {
     ...defaultConfig,
     ...raw,
-    versions: Array.isArray(raw.versions) && raw.versions.length ? raw.versions : defaultConfig.versions,
+    versions: mergeVersions(raw.versions),
   };
   const api = normalizeApiBase(merged.launcherApiBaseUrl);
+  let needsSave = JSON.stringify(raw.versions || []) !== JSON.stringify(merged.versions);
   if (api !== merged.launcherApiBaseUrl) {
     merged.launcherApiBaseUrl = api;
-    store.set('config', merged);
+    needsSave = true;
   }
   if (/localhost|127\.0\.0\.1/i.test(api) && !process.env.LAUNCHER_USE_LOCAL_API) {
     merged.launcherApiBaseUrl = PRODUCTION_API_BASE;
-    store.set('config', merged);
+    needsSave = true;
   }
+  if (needsSave) store.set('config', merged);
   return merged;
 }
 
@@ -470,7 +500,7 @@ app.whenReady().then(() => {
     const v = cfg.versions?.find((x) => x.id === versionId);
     if (!v) return { ok: false, error: 'Версия не найдена.' };
 
-    if (v.cloudInstall) {
+    if (versionUsesCloudInstall(v)) {
       try {
         const manifest = await fetchLauncherManifest();
         const prepared = await prepareInstance(manifest, sendDownloadProgress);

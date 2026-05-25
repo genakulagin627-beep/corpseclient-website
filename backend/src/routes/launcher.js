@@ -4,7 +4,10 @@ const path = require("path");
 
 const router = express.Router();
 const siteRoot = path.resolve(__dirname, "..", "..", "..");
-const launcherDistDir = path.join(siteRoot, "lan", "dist");
+const launcherBuildDirs = [
+  path.join(siteRoot, "lan", "release"),
+  path.join(siteRoot, "lan", "dist"),
+];
 const launcherUploadDir = path.join(siteRoot, "uploads", "launcher");
 
 function findLauncherExe() {
@@ -24,17 +27,18 @@ function findLauncherExe() {
 }
 
 function findLocalLauncherExe() {
-  if (!fs.existsSync(launcherDistDir)) return null;
-  const files = fs
-    .readdirSync(launcherDistDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && /\.exe$/i.test(entry.name))
-    .map((entry) => {
-      const fullPath = path.join(launcherDistDir, entry.name);
+  const all = [];
+  for (const dir of launcherBuildDirs) {
+    if (!fs.existsSync(dir)) continue;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile() || !/\.exe$/i.test(entry.name)) continue;
+      const fullPath = path.join(dir, entry.name);
       const st = fs.statSync(fullPath);
-      return { name: entry.name, fullPath, mtimeMs: st.mtimeMs };
-    })
-    .sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return files.length ? files[0] : null;
+      all.push({ name: entry.name, fullPath, mtimeMs: st.mtimeMs });
+    }
+  }
+  all.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return all.length ? all[0] : null;
 }
 
 function hasActiveSubscription(user) {
