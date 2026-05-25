@@ -305,8 +305,14 @@ function renderCards() {
         hideLoader();
         try {
           const res = await window.launcher.launch(id);
-          if (res.ok) showToast('Клиент запущен');
-          else showToast(res.error || 'Ошибка запуска', true);
+          if (res.ok) {
+            const dir = res.installDir || 'C:\\InProtect';
+            showToast(`Запуск java -jar. Файлы: ${dir}`, false);
+            setTimeout(() => window.launcher.openInProtectFolder?.(), 800);
+          } else {
+            showToast(res.error || 'Ошибка запуска', true);
+            if (res.installDir) setTimeout(() => window.launcher.openInProtectFolder?.(), 600);
+          }
         } finally {
           showDownloadOverlay(false);
         }

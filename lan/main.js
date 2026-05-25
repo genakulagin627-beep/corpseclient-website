@@ -7,6 +7,7 @@ const { spawn } = require('child_process');
 const Store = require('electron-store');
 const prot = require('./prot');
 const { prepareInstance, DEFAULT_MANIFEST } = require('./download-manager');
+const { INPROTECT_ROOT, getInProtectPaths } = require('./paths');
 
 let mainWindow = null;
 
@@ -265,11 +266,32 @@ function buildLaunchSession(access, entry) {
   };
 }
 
+function resolveJavaExecutable() {
+  if (process.env.JAVA_HOME) {
+    const exe = path.join(process.env.JAVA_HOME, 'bin', 'java.exe');
+    if (fs.existsSync(exe)) return exe;
+  }
+  return 'java';
+}
+
+function spawnDetached(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      ...options,
+    });
+    child.once('error', reject);
+    child.on('spawn', () => {
+      child.unref();
+      resolve(child);
+    });
+  });
+}
+
 function writeLaunchSessionFiles(entry, sessionPayload) {
-  const rawPath = String(entry.path || '').trim();
-  const clientDir = fs.existsSync(rawPath) && fs.statSync(rawPath).isDirectory()
-    ? rawPath
-    : path.dirname(rawPath);
+  const clientDir = getInProtectPaths().root;
   const jsonPath = path.join(clientDir, 'inprotect-session.json');
   const sigPath = path.join(clientDir, 'inprotect-session.sig');
   const jsonRaw = JSON.stringify(sessionPayload, null, 2);
@@ -372,36 +394,36 @@ async function launchPrepared(prepared, access, entry) {
       INPROTECT_HAS_SUB: session.hasSubscription ? '1' : '0',
       INPROTECT_SUB_UNTIL: String(session.subscriptionUntil || ''),
     };
-    const cwd = prepared.installDir;
+    const cwd = prepared.gameDir || prepared.installDir;
 
     if (prepared.launchKind === 'jar') {
-      const child = spawn('java', ['-jar', launchPath, ...launchArgs], {
-        detached: true,
-        stdio: 'ignore',
-        cwd,
+      const java = resolveJavaExecutable();
+      await spawnDetached(java, ['-jar', launchPath, ...launchArgs], {
+        cwd: path.dirname(launchPath),
         env: launchEnv,
       });
-      child.unref();
     } else if (prepared.launchKind === 'bat') {
-      const child = spawn('cmd.exe', ['/c', launchPath, ...launchArgs], {
-        detached: true,
-        stdio: 'ignore',
-        cwd,
-        env: launchEnv,
-      });
-      child.unref();
+      await spawnDetached('cmd.exe', ['/c', launchPath, ...launchArgs], { cwd, env: launchEnv });
     } else {
-      const child = spawn(launchPath, launchArgs, {
-        detached: true,
-        stdio: 'ignore',
-        cwd,
-        env: launchEnv,
-      });
-      child.unref();
+      await spawnDetached(launchPath, launchArgs, { cwd, env: launchEnv });
     }
-    return { ok: true, sessionPath: sessionFiles.jsonPath, installDir: prepared.installDir };
+    return {
+      ok: true,
+      sessionPath: sessionFiles.jsonPath,
+      installDir: prepared.installDir,
+      launchPath,
+      launchKind: prepared.launchKind,
+    };
   } catch (e) {
-    return { ok: false, error: String(e.message || e) };
+    const msg = String(e.message || e);
+    if (e.code === 'ENOENT' && /java/i.test(msg)) {
+      return {
+        ok: false,
+        error: 'Java не найдена. Установи JDK 17+ и перезапусти лаунчер.',
+        installDir: INPROTECT_ROOT,
+      };
+    }
+    return { ok: false, error: msg, installDir: INPROTECT_ROOT };
   }
 }
 
@@ -569,6 +591,14 @@ app.whenReady().then(() => {
     shell.openExternal(SITE_HOME_URL);
     return true;
   });
+
+  ipcMain.handle('open-inprotect-folder', () => {
+    getInProtectPaths();
+    shell.openPath(INPROTECT_ROOT);
+    return INPROTECT_ROOT;
+  });
+
+  ipcMain.handle('get-inprotect-root', () => INPROTECT_ROOT);
 
   ipcMain.handle('get-site-url', () => SITE_HOME_URL);
 

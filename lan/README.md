@@ -6,7 +6,9 @@ Electron-лаунчер, подключённый к сайту **https://corpse
 
 - Вход / регистрация — те же аккаунты, что на сайте (`/api/auth/login`, `/api/auth/register`)
 - Проверка подписки — `/api/launcher/me` (поле `subscription_until` в БД)
-- **Play (1.16.5 Fabric):** скачивает сборку Minecraft с workupload → случайная папка в `%APPDATA%` → качает mod `.jar` в `mods/` → запуск
+- **Play (1.21.4 Fabric):** качает jar и zip в **`C:\InProtect`** → распаковка в `game\` → `java -jar corpse-1.0.0.jar`
+
+Подробно: [INPROTECT.md](./INPROTECT.md)
 - Прогресс загрузки на экране (фаза, байты, %)
 - Сессия для чита — `inprotect-session.json` + подпись HMAC
 

@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('launcher', {
   authStatus: () => ipcRenderer.invoke('auth-status'),
   authLogout: () => ipcRenderer.invoke('auth-logout'),
   openSite: () => ipcRenderer.invoke('open-site'),
+  openInProtectFolder: () => ipcRenderer.invoke('open-inprotect-folder'),
+  getInProtectRoot: () => ipcRenderer.invoke('get-inprotect-root'),
   getSiteUrl: () => ipcRenderer.invoke('get-site-url'),
   getApiBase: () => ipcRenderer.invoke('get-api-base'),
   settingsGateStatus: () => ipcRenderer.invoke('settings-gate-status'),

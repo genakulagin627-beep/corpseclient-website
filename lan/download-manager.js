@@ -1,10 +1,9 @@
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
 const { spawn } = require('child_process');
-const { app } = require('electron');
+const { getInProtectPaths, resetDir } = require('./paths');
 const {
   resolveWorkuploadDownloadUrl,
   isDirectDownloadUrl,
@@ -26,14 +25,6 @@ const DEFAULT_MANIFEST = {
 
 function emitProgress(onProgress, patch) {
   if (typeof onProgress === 'function') onProgress(patch);
-}
-
-function randomInstallDir() {
-  const base = path.join(app.getPath('userData'), 'instances');
-  fs.mkdirSync(base, { recursive: true });
-  const dir = path.join(base, crypto.randomBytes(12).toString('hex'));
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
 }
 
 function fetchWithRedirects(url, maxRedirects = 12, extraHeaders = {}) {
@@ -215,18 +206,17 @@ function walkFiles(dir, depth = 0, maxDepth = 8) {
 
 function findLaunchExecutable(rootDir) {
   const files = walkFiles(rootDir);
-  const priority = [
-    /javaw\.exe$/i,
-    /minecraft\.exe$/i,
-    /fabric.*\.exe$/i,
-    /\.exe$/i,
-  ];
+  const jar =
+    files.find((f) => /corpse.*\.jar$/i.test(f)) ||
+    files.find((f) => /fabric.*\.jar$/i.test(f) && !/sources/i.test(f));
+  if (jar) return { path: jar, kind: 'jar' };
+  const priority = [/javaw\.exe$/i, /minecraft\.exe$/i, /fabric.*\.exe$/i, /\.exe$/i];
   for (const re of priority) {
     const hit = files.find((f) => re.test(f) && !/unins|setup|install|update/i.test(f));
-    if (hit) return hit;
+    if (hit) return { path: hit, kind: 'exe' };
   }
   const bat = files.find((f) => /\.bat$/i.test(f) && /start|run|launch|play/i.test(f));
-  if (bat) return bat;
+  if (bat) return { path: bat, kind: 'bat' };
   return null;
 }
 
@@ -256,7 +246,9 @@ function findModsDir(rootDir) {
 }
 
 async function prepareInstance(manifest, onProgress, opts = {}) {
-  const installDir = randomInstallDir();
+  const { root, game, mods, clientJar, packZip } = getInProtectPaths();
+  resetDir(game);
+
   const packUrl = normalizeDownloadUrl(
     String(manifest.minecraftPackUrl || DEFAULT_MANIFEST.minecraftPackUrl).trim()
   );
@@ -265,12 +257,18 @@ async function prepareInstance(manifest, onProgress, opts = {}) {
   );
   const dlOpts = { authToken: opts.authToken };
 
-  const packExt = /\.zip(\?|$)/i.test(packUrl) ? '.zip' : '.bin';
-  const packTmp = path.join(installDir, `_pack_dl${packExt}`);
-  await downloadUrlToFile(packUrl, packTmp, 'Скачивание Minecraft Fabric…', onProgress, dlOpts);
+  emitProgress(onProgress, { phase: 'Скачивание мода (jar)…', received: 0, total: 0, percent: 0 });
+  await downloadUrlToFile(modUrl, clientJar, 'Скачивание corpse-1.0.0.jar…', onProgress, dlOpts);
+
+  const modInMods = path.join(mods, 'corpse-1.0.0.jar');
+  try {
+    fs.copyFileSync(clientJar, modInMods);
+  } catch (_) {}
+
+  await downloadUrlToFile(packUrl, packZip, 'Скачивание сборки Fabric…', onProgress, dlOpts);
 
   const head = Buffer.alloc(256);
-  const fd = fs.openSync(packTmp, 'r');
+  const fd = fs.openSync(packZip, 'r');
   fs.readSync(fd, head, 0, 256, 0);
   fs.closeSync(fd);
   const isZip = head[0] === 0x50 && head[1] === 0x4b;
@@ -282,46 +280,47 @@ async function prepareInstance(manifest, onProgress, opts = {}) {
     sniff.includes('<html');
 
   if (looksHtml) {
-    try {
-      fs.unlinkSync(packTmp);
-    } catch (_) {}
     throw new Error(
       'Скачана страница вместо zip. Проверь MC_PACK_URL на Render (Dropbox: dl=1).'
     );
   }
 
   if (isZip) {
-    emitProgress(onProgress, { phase: 'Распаковка…', received: 0, total: 0, percent: -1 });
-    let packZip = packTmp;
-    if (!/\.zip$/i.test(packTmp)) {
-      packZip = path.join(installDir, '_pack_dl.zip');
-      fs.renameSync(packTmp, packZip);
-    }
-    await extractZipWin(packZip, installDir);
-    try {
-      fs.unlinkSync(packZip);
-    } catch (_) {}
+    emitProgress(onProgress, { phase: 'Распаковка в C:\\InProtect\\game…', received: 0, total: 0, percent: -1 });
+    await extractZipWin(packZip, game);
   } else {
     const ext = packUrl.toLowerCase().includes('.jar') ? '.jar' : '.exe';
-    const finalPack = path.join(installDir, `client_pack${ext}`);
-    fs.renameSync(packTmp, finalPack);
+    fs.renameSync(packZip, path.join(game, `client_pack${ext}`));
   }
 
-  const modsDir = findModsDir(installDir);
-  const modDest = path.join(modsDir, 'corpseclient-mod.jar');
-  await downloadUrlToFile(modUrl, modDest, 'Скачивание мода…', onProgress, dlOpts);
+  const modsInGame = findModsDir(game);
+  try {
+    fs.copyFileSync(clientJar, path.join(modsInGame, 'corpse-1.0.0.jar'));
+  } catch (_) {}
 
-  const launchPath = findLaunchExecutable(installDir);
-  if (!launchPath) {
-    throw new Error('Не найден .exe для запуска в скачанном архиве.');
+  let launchPath = clientJar;
+  let launchKind = 'jar';
+  const alt = findLaunchExecutable(game);
+  if (!fs.existsSync(clientJar) && alt) {
+    launchPath = alt.path;
+    launchKind = alt.kind;
   }
 
-  emitProgress(onProgress, { phase: 'Готово', received: 1, total: 1, percent: 100 });
+  if (!fs.existsSync(launchPath)) {
+    throw new Error(
+      `Файл клиента не найден в ${root}. Проверь загрузку jar и zip.`
+    );
+  }
+
+  emitProgress(onProgress, { phase: 'Запуск…', received: 1, total: 1, percent: 100 });
   return {
-    installDir,
+    installDir: root,
+    gameDir: game,
     launchPath,
-    launchKind: /\.jar$/i.test(launchPath) ? 'jar' : /\.bat$/i.test(launchPath) ? 'bat' : 'exe',
-    modPath: modDest,
+    launchKind,
+    clientJarPath: clientJar,
+    modPath: modInMods,
+    packZipPath: packZip,
   };
 }
 
@@ -330,4 +329,5 @@ module.exports = {
   formatBytes,
   prepareInstance,
   downloadUrlToFile,
+  getInProtectPaths,
 };
