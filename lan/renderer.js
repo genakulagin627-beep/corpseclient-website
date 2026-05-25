@@ -307,8 +307,13 @@ function renderCards() {
           const res = await window.launcher.launch(id);
           if (res.ok) {
             const dir = res.installDir || 'C:\\InProtect';
-            showToast(`Запуск java -jar. Файлы: ${dir}`, false);
-            setTimeout(() => window.launcher.openInProtectFolder?.(), 800);
+            showToast(
+              res.cached
+                ? `Запуск без повторной загрузки (${dir})`
+                : `Установлено и запущено (${dir})`,
+              false
+            );
+            if (!res.cached) setTimeout(() => window.launcher.openInProtectFolder?.(), 800);
           } else {
             showToast(res.error || 'Ошибка запуска', true);
             if (res.installDir) setTimeout(() => window.launcher.openInProtectFolder?.(), 600);

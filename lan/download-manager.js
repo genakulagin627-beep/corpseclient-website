@@ -3,7 +3,18 @@ const path = require('path');
 const http = require('http');
 const https = require('https');
 const { spawn } = require('child_process');
-const { getInProtectPaths, resetDir } = require('./paths');
+const {
+  getInProtectPaths,
+  resetDir,
+  fileOk,
+  dirHasContent,
+  manifestFingerprint,
+  readInstallState,
+  writeInstallState,
+  isInstallReady,
+  MIN_JAR_BYTES,
+  MIN_ZIP_BYTES,
+} = require('./paths');
 const {
   resolveWorkuploadDownloadUrl,
   isDirectDownloadUrl,
@@ -245,30 +256,44 @@ function findModsDir(rootDir) {
   return guessed;
 }
 
-async function prepareInstance(manifest, onProgress, opts = {}) {
-  const { root, game, mods, clientJar, packZip } = getInProtectPaths();
-  resetDir(game);
-
-  const packUrl = normalizeDownloadUrl(
-    String(manifest.minecraftPackUrl || DEFAULT_MANIFEST.minecraftPackUrl).trim()
-  );
-  const modUrl = normalizeDownloadUrl(
-    String(manifest.modJarUrl || DEFAULT_MANIFEST.modJarUrl).trim()
-  );
-  const dlOpts = { authToken: opts.authToken };
-
-  emitProgress(onProgress, { phase: 'Скачивание мода (jar)…', received: 0, total: 0, percent: 0 });
-  await downloadUrlToFile(modUrl, clientJar, 'Скачивание corpse-1.0.0.jar…', onProgress, dlOpts);
-
-  const modInMods = path.join(mods, 'corpse-1.0.0.jar');
+function syncJarCopies(paths) {
+  const modInMods = path.join(paths.mods, 'corpse-1.0.0.jar');
   try {
-    fs.copyFileSync(clientJar, modInMods);
+    fs.copyFileSync(paths.clientJar, modInMods);
   } catch (_) {}
+  try {
+    const modsInGame = findModsDir(paths.game);
+    fs.copyFileSync(paths.clientJar, path.join(modsInGame, 'corpse-1.0.0.jar'));
+  } catch (_) {}
+}
 
-  await downloadUrlToFile(packUrl, packZip, 'Скачивание сборки Fabric…', onProgress, dlOpts);
+function buildLaunchResult(paths) {
+  const modInMods = path.join(paths.mods, 'corpse-1.0.0.jar');
+  let launchPath = paths.clientJar;
+  let launchKind = 'jar';
+  const alt = findLaunchExecutable(paths.game);
+  if (!fileOk(launchPath, MIN_JAR_BYTES) && alt) {
+    launchPath = alt.path;
+    launchKind = alt.kind;
+  }
+  if (!fs.existsSync(launchPath)) {
+    throw new Error(`Файл клиента не найден в ${paths.root}.`);
+  }
+  return {
+    installDir: paths.root,
+    gameDir: paths.game,
+    launchPath,
+    launchKind,
+    clientJarPath: paths.clientJar,
+    modPath: modInMods,
+    packZipPath: paths.packZip,
+    cached: true,
+  };
+}
 
+function sniffPackFile(packPath) {
   const head = Buffer.alloc(256);
-  const fd = fs.openSync(packZip, 'r');
+  const fd = fs.openSync(packPath, 'r');
   fs.readSync(fd, head, 0, 256, 0);
   fs.closeSync(fd);
   const isZip = head[0] === 0x50 && head[1] === 0x4b;
@@ -278,50 +303,95 @@ async function prepareInstance(manifest, onProgress, opts = {}) {
     (head[0] === 0xef && head[1] === 0xbb) ||
     sniff.includes('<!doctype') ||
     sniff.includes('<html');
+  return { isZip, looksHtml };
+}
 
+async function extractPackToGame(packZip, game, packUrl, onProgress) {
+  const { isZip, looksHtml } = sniffPackFile(packZip);
   if (looksHtml) {
     throw new Error(
       'Скачана страница вместо zip. Проверь MC_PACK_URL на Render (Dropbox: dl=1).'
     );
   }
-
   if (isZip) {
-    emitProgress(onProgress, { phase: 'Распаковка в C:\\InProtect\\game…', received: 0, total: 0, percent: -1 });
+    emitProgress(onProgress, {
+      phase: 'Распаковка в C:\\InProtect\\game…',
+      received: 0,
+      total: 0,
+      percent: -1,
+    });
     await extractZipWin(packZip, game);
   } else {
     const ext = packUrl.toLowerCase().includes('.jar') ? '.jar' : '.exe';
-    fs.renameSync(packZip, path.join(game, `client_pack${ext}`));
+    fs.copyFileSync(packZip, path.join(game, `client_pack${ext}`));
+  }
+}
+
+async function prepareInstance(manifest, onProgress, opts = {}) {
+  const paths = getInProtectPaths();
+  const packUrl = normalizeDownloadUrl(
+    String(manifest.minecraftPackUrl || DEFAULT_MANIFEST.minecraftPackUrl).trim()
+  );
+  const modUrl = normalizeDownloadUrl(
+    String(manifest.modJarUrl || DEFAULT_MANIFEST.modJarUrl).trim()
+  );
+  const fingerprint = manifestFingerprint(packUrl, modUrl);
+  const dlOpts = { authToken: opts.authToken };
+  const force = !!opts.forceReinstall;
+  const state = readInstallState(paths.root);
+
+  if (!force && state?.fingerprint === fingerprint && isInstallReady(paths)) {
+    emitProgress(onProgress, {
+      phase: 'Уже установлено — запуск…',
+      received: 1,
+      total: 1,
+      percent: 100,
+    });
+    syncJarCopies(paths);
+    const result = buildLaunchResult(paths);
+    result.cached = true;
+    return result;
   }
 
-  const modsInGame = findModsDir(game);
-  try {
-    fs.copyFileSync(clientJar, path.join(modsInGame, 'corpse-1.0.0.jar'));
-  } catch (_) {}
+  const needJar = force || !fileOk(paths.clientJar, MIN_JAR_BYTES);
+  const needGame = force || !dirHasContent(paths.game);
+  const needPackDownload = needGame && (force || !fileOk(paths.packZip, MIN_ZIP_BYTES));
 
-  let launchPath = clientJar;
-  let launchKind = 'jar';
-  const alt = findLaunchExecutable(game);
-  if (!fs.existsSync(clientJar) && alt) {
-    launchPath = alt.path;
-    launchKind = alt.kind;
+  if (needJar) {
+    emitProgress(onProgress, { phase: 'Скачивание мода (jar)…', received: 0, total: 0, percent: 0 });
+    await downloadUrlToFile(modUrl, paths.clientJar, 'Скачивание corpse-1.0.0.jar…', onProgress, dlOpts);
+  } else {
+    emitProgress(onProgress, { phase: 'Мод уже на диске C:\\InProtect', received: 1, total: 1, percent: 100 });
+  }
+  syncJarCopies(paths);
+
+  if (needPackDownload) {
+    await downloadUrlToFile(packUrl, paths.packZip, 'Скачивание сборки Fabric…', onProgress, dlOpts);
+  } else if (needGame && fileOk(paths.packZip, MIN_ZIP_BYTES)) {
+    emitProgress(onProgress, { phase: 'Сборка уже скачана', received: 1, total: 1, percent: 100 });
   }
 
-  if (!fs.existsSync(launchPath)) {
-    throw new Error(
-      `Файл клиента не найден в ${root}. Проверь загрузку jar и zip.`
-    );
+  if (needGame) {
+    if (!fileOk(paths.packZip, MIN_ZIP_BYTES)) {
+      throw new Error('Нет pack.zip для распаковки. Удали C:\\InProtect\\install-state.json и нажми Play снова.');
+    }
+    resetDir(paths.game);
+    await extractPackToGame(paths.packZip, paths.game, packUrl, onProgress);
+  } else {
+    emitProgress(onProgress, { phase: 'Сборка уже распакована', received: 1, total: 1, percent: 100 });
   }
+
+  writeInstallState(paths.root, {
+    fingerprint,
+    packUrl,
+    modUrl,
+    installedAt: new Date().toISOString(),
+  });
 
   emitProgress(onProgress, { phase: 'Запуск…', received: 1, total: 1, percent: 100 });
-  return {
-    installDir: root,
-    gameDir: game,
-    launchPath,
-    launchKind,
-    clientJarPath: clientJar,
-    modPath: modInMods,
-    packZipPath: packZip,
-  };
+  const result = buildLaunchResult(paths);
+  result.cached = false;
+  return result;
 }
 
 module.exports = {

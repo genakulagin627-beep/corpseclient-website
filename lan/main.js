@@ -528,8 +528,11 @@ app.whenReady().then(() => {
         const manifest = await fetchLauncherManifest();
         const prepared = await prepareInstance(manifest, sendDownloadProgress, {
           authToken: getAuthToken(),
+          forceReinstall: !!_e?.forceReinstall,
         });
-        return launchPrepared(prepared, access, v);
+        const launched = await launchPrepared(prepared, access, v);
+        if (launched.ok) launched.cached = !!prepared.cached;
+        return launched;
       } catch (e) {
         sendDownloadProgress({ phase: 'Ошибка', received: 0, total: 0, percent: 0 });
         return { ok: false, error: String(e.message || e) };
