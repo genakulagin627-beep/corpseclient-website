@@ -5,6 +5,23 @@ const path = require("path");
 const router = express.Router();
 const siteRoot = path.resolve(__dirname, "..", "..", "..");
 const launcherDistDir = path.join(siteRoot, "lan", "dist");
+const launcherUploadDir = path.join(siteRoot, "uploads", "launcher");
+
+function findLauncherExe() {
+  const fromDist = findLocalLauncherExe();
+  if (fromDist) return fromDist;
+  if (!fs.existsSync(launcherUploadDir)) return null;
+  const files = fs
+    .readdirSync(launcherUploadDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /\.exe$/i.test(entry.name))
+    .map((entry) => {
+      const fullPath = path.join(launcherUploadDir, entry.name);
+      const st = fs.statSync(fullPath);
+      return { name: entry.name, fullPath, mtimeMs: st.mtimeMs };
+    })
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return files.length ? files[0] : null;
+}
 
 function findLocalLauncherExe() {
   if (!fs.existsSync(launcherDistDir)) return null;
@@ -41,6 +58,20 @@ router.get("/me", (req, res) => {
   });
 });
 
+router.get("/manifest", (req, res) => {
+  if (!hasActiveSubscription(req.user)) {
+    return res.status(403).json({ error: "no_subscription" });
+  }
+  return res.json({
+    minecraftPackUrl:
+      String(process.env.MC_PACK_URL || "").trim() ||
+      "https://workupload.com/file/DfDbfTtSUsz",
+    modJarUrl:
+      String(process.env.MOD_JAR_URL || "").trim() ||
+      "https://workupload.com/file/BLmQgMPqCXW",
+  });
+});
+
 router.get("/download-link", (req, res) => {
   if (!hasActiveSubscription(req.user)) {
     return res.status(403).json({ error: "no_subscription" });
@@ -50,9 +81,10 @@ router.get("/download-link", (req, res) => {
     return res.json({ url });
   }
 
-  const localExe = findLocalLauncherExe();
+  const localExe = findLauncherExe();
   if (localExe) {
-    return res.json({ url: "/api/launcher/download-binary" });
+    const base = `${req.protocol}://${req.get("host")}`;
+    return res.json({ url: `${base}/api/launcher/download-binary` });
   }
 
   return res.status(500).json({ error: "download_unconfigured" });
@@ -62,7 +94,7 @@ router.get("/download-binary", (req, res) => {
   if (!hasActiveSubscription(req.user)) {
     return res.status(403).json({ error: "no_subscription" });
   }
-  const localExe = findLocalLauncherExe();
+  const localExe = findLauncherExe();
   if (!localExe) {
     return res.status(404).json({ error: "launcher_file_missing" });
   }

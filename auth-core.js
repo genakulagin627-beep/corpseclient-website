@@ -579,6 +579,7 @@
     isValidNickname: isValidNickname,
     isAdminUser: isAdminUser,
     getApiBase: getApiBase,
+    apiUrl: apiUrl,
     ensureApiBaseProbed: ensureApiBaseProbed,
     resetApiRouting: resetApiRouting,
     getToken: getToken,

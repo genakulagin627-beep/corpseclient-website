@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file:; font-src 'self' data:; script-src 'self';" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Launcher</title>
+    <title>CorpseClient Launcher</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -22,10 +22,21 @@
       </div>
     </div>
 
+    <div id="download-overlay" class="download-overlay hidden" aria-hidden="true">
+      <div class="download-card">
+        <h2 id="dl-title">Загрузка клиента</h2>
+        <p class="muted" id="dl-phase">Подготовка…</p>
+        <div class="dl-bar" aria-hidden="true"><div class="dl-bar-fill" id="dl-bar-fill"></div></div>
+        <p class="dl-stats" id="dl-stats">0 / 0</p>
+      </div>
+    </div>
+
     <div id="auth-gate" class="auth-gate">
       <div class="auth-card">
-        <h1>Вход в лаунчер</h1>
-        <p class="muted" id="auth-gate-status">Войди или зарегистрируйся, чтобы открыть основной интерфейс.</p>
+        <h1>CorpseClient</h1>
+        <p class="muted auth-gate-lead">Тот же аккаунт, что на сайте. Подписка проверяется на сервере.</p>
+        <p class="muted" id="auth-gate-status">Войди или зарегистрируйся, чтобы открыть лаунчер.</p>
+        <p class="auth-api-hint muted" id="auth-api-hint"></p>
         <div class="auth-switch">
           <button type="button" class="btn secondary auth-tab active" id="auth-tab-login">Вход</button>
           <button type="button" class="btn secondary auth-tab" id="auth-tab-register">Регистрация</button>
@@ -41,6 +52,7 @@
           </div>
           <div class="pin-actions">
             <button type="button" class="btn primary" id="btn-auth-login">Войти</button>
+            <button type="button" class="btn secondary" id="btn-open-site">Сайт</button>
           </div>
         </div>
         <div id="auth-register-form" class="hidden">
@@ -124,7 +136,13 @@
         <section class="view view--home" id="view-home">
           <div class="content-head">
             <h1>Версии</h1>
-            <p class="muted">Выберите версию и нажмите Play</p>
+            <p class="muted">1.16.5 Fabric: скачает сборку + мод с сервера в случайную папку и запустит</p>
+            <p class="sub-status-line" id="hdr-sub-status"></p>
+            <div class="content-head-actions">
+              <button type="button" class="btn secondary btn-sm" id="btn-refresh-sub">Обновить подписку</button>
+              <button type="button" class="btn secondary btn-sm" id="btn-open-site-main">Сайт</button>
+              <button type="button" class="btn secondary btn-sm" id="btn-auth-logout">Выйти</button>
+            </div>
             <p class="prot-badge" id="prot-badge" aria-hidden="true"></p>
           </div>
           <div class="cards" id="version-cards"></div>

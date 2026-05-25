@@ -23,6 +23,46 @@ function hideLoader() {
   el.setAttribute('aria-busy', 'false');
 }
 
+function showDownloadOverlay(show) {
+  const el = $('download-overlay');
+  if (!el) return;
+  el.classList.toggle('hidden', !show);
+  el.setAttribute('aria-hidden', show ? 'false' : 'true');
+}
+
+function updateDownloadProgress(p) {
+  if (!p) return;
+  const phase = $('dl-phase');
+  const stats = $('dl-stats');
+  const fill = $('dl-bar-fill');
+  if (phase) phase.textContent = p.phase || 'Загрузка…';
+  const rec = p.received || 0;
+  const tot = p.total || 0;
+  if (stats) {
+    if (tot > 0 && p.percent >= 0) {
+      stats.textContent = `${formatDlBytes(rec)} / ${formatDlBytes(tot)} (${p.percent}%)`;
+    } else {
+      stats.textContent = formatDlBytes(rec);
+    }
+  }
+  if (fill) {
+    const w = p.percent >= 0 ? Math.min(100, p.percent) : tot ? Math.min(100, Math.round((rec / tot) * 100)) : 8;
+    fill.style.width = `${w}%`;
+  }
+}
+
+function formatDlBytes(n) {
+  if (!n || n < 0) return '0 B';
+  const u = ['B', 'KB', 'MB', 'GB'];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < u.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${v.toFixed(i ? 1 : 0)} ${u[i]}`;
+}
+
 async function withLoader(title, sub, fn) {
   showLoader(title, sub);
   try {
@@ -80,12 +120,37 @@ function switchAuthTab(tab) {
 function applyHeader() {
   const user = authState && authState.ok ? authState.user || null : null;
   $('hdr-username').textContent = (user && user.displayName) || config.username || 'Player';
-  $('hdr-sub').textContent = formatSubLine(config.subExpires);
+  const subIso = authState && authState.ok ? authState.subscriptionUntil : null;
+  if (subIso) {
+    try {
+      const d = new Date(subIso);
+      const pad = (n) => String(n).padStart(2, '0');
+      $('hdr-sub').textContent = `Подписка до ${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
+    } catch (_) {
+      $('hdr-sub').textContent = formatSubLine(config.subExpires);
+    }
+  } else {
+    $('hdr-sub').textContent = formatSubLine(config.subExpires);
+  }
   $('hdr-profile').textContent = (user && user.email) || config.profileId || '—';
   const av = $('avatar');
   av.style.backgroundImage = 'url("assets/verses.png")';
   av.style.backgroundSize = 'cover';
   av.style.backgroundPosition = 'center';
+  applySubStatusBadge();
+}
+
+function applySubStatusBadge() {
+  const el = $('hdr-sub-status');
+  if (!el) return;
+  if (!authState || !authState.ok) {
+    el.textContent = '';
+    el.className = 'sub-status-line';
+    return;
+  }
+  const active = !!authState.hasSubscription;
+  el.textContent = active ? '● Подписка активна — можно запускать клиент' : '● Подписка не активна — купи на сайте';
+  el.className = 'sub-status-line ' + (active ? 'sub-status-line--ok' : 'sub-status-line--bad');
 }
 
 function applyAuthStatus() {
@@ -102,6 +167,7 @@ async function refreshAuthState(showMessage = false) {
   config = await window.launcher.getConfig();
   applyHeader();
   applyAuthStatus();
+  renderCards();
   setAuthGateOpen(!authState.ok);
   if (showMessage) {
     if (authState.ok) showToast(authState.hasSubscription ? 'Подписка активна' : 'Подписка не активна', !authState.hasSubscription);
@@ -122,6 +188,7 @@ async function doAuthLogin() {
     const p = $('auth-password');
     if (p) p.value = '';
     setAuthGateOpen(false);
+    renderCards();
     return;
   }
   showToast(res.error || 'Ошибка входа', true);
@@ -149,6 +216,7 @@ async function doAuthRegister() {
   applyAuthStatus();
   if (res.ok) {
     setAuthGateOpen(false);
+    renderCards();
     showToast(res.hasSubscription ? 'Регистрация успешна. Доступ открыт.' : 'Регистрация успешна. Нужна подписка для запуска.', !res.hasSubscription);
     const p = $('auth-reg-password');
     if (p) p.value = '';
@@ -216,11 +284,31 @@ function renderCards() {
     root.appendChild(el);
   });
 
+  const canPlay = authState && authState.ok && authState.hasSubscription;
   root.querySelectorAll('.play-btn').forEach((btn) => {
+    btn.disabled = !canPlay;
+    btn.title = canPlay ? 'Запуск' : 'Нужна активная подписка';
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
+      if (!canPlay) {
+        showToast('Нет активной подписки. Оформи на сайте.', true);
+        return;
+      }
       const id = btn.getAttribute('data-version');
-      const res = await withLoader('Запуск…', 'Открываем клиент. Не закрывай лаунчер.', () => window.launcher.launch(id));
+      const v = (config.versions || []).find((x) => x.id === id);
+      if (v && v.cloudInstall) {
+        showDownloadOverlay(true);
+        hideLoader();
+        try {
+          const res = await window.launcher.launch(id);
+          if (res.ok) showToast('Клиент запущен');
+          else showToast(res.error || 'Ошибка запуска', true);
+        } finally {
+          showDownloadOverlay(false);
+        }
+        return;
+      }
+      const res = await withLoader('Запуск…', 'Проверяем подписку и открываем клиент.', () => window.launcher.launch(id));
       if (res.ok) showToast('Клиент запущен');
       else showToast(res.error || 'Ошибка запуска', true);
     });
@@ -496,8 +584,23 @@ async function init() {
   });
 
   document.getElementById('btn-exit').addEventListener('click', () => window.launcher.close());
+
+  if (window.launcher.onDownloadProgress) {
+    window.launcher.onDownloadProgress(updateDownloadProgress);
+  }
   document.getElementById('btn-auth-login').addEventListener('click', () => doAuthLogin());
   document.getElementById('btn-auth-register').addEventListener('click', () => doAuthRegister());
+  document.getElementById('btn-auth-logout')?.addEventListener('click', () => doAuthLogout());
+  document.getElementById('btn-refresh-sub')?.addEventListener('click', () => refreshAuthState(true));
+  const openSite = () => window.launcher.openSite();
+  document.getElementById('btn-open-site')?.addEventListener('click', openSite);
+  document.getElementById('btn-open-site-main')?.addEventListener('click', openSite);
+
+  try {
+    const api = await window.launcher.getApiBase();
+    const hint = $('auth-api-hint');
+    if (hint && api) hint.textContent = `Сервер: ${api}`;
+  } catch (_) {}
   document.getElementById('auth-tab-login').addEventListener('click', () => switchAuthTab('login'));
   document.getElementById('auth-tab-register').addEventListener('click', () => switchAuthTab('register'));
   const authPass = $('auth-password');

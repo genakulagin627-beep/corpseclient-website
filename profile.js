@@ -181,6 +181,9 @@
         alert("Ссылка на лаунчер пустая.");
         return;
       }
+      if (!/^https?:\/\//i.test(href) && A.apiUrl) {
+        href = A.apiUrl(href);
+      }
       window.location.href = href;
     });
   });

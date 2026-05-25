@@ -15,6 +15,8 @@
       topLead:
         "Покажем, как может выглядеть твой лаунчер и сайт: визуал, карточки и блоки — как у готового клиента. Один экран, без лишних переходов.",
       btnUse: "Использовать",
+      btnDownloadLauncher: "Скачать лаунчер",
+      launcherDlHint: "Нужна активная подписка. Войди в аккаунт, если кнопка скрыта.",
       btnContact: "Связаться",
       learnTitle: "Узнайте больше!",
       learnSub:
@@ -98,6 +100,8 @@
       topLead:
         "See how your launcher and site could look: visuals, cards, and blocks like a finished client. One page, no extra hops.",
       btnUse: "Use",
+      btnDownloadLauncher: "Download launcher",
+      launcherDlHint: "Active subscription required. Sign in if the button is hidden.",
       btnContact: "Contact",
       learnTitle: "Learn more!",
       learnSub: "Our client offers convenient and powerful features to enhance your gameplay.",
@@ -201,15 +205,54 @@
     }
   }
 
+  function downloadLauncherFromSite() {
+    var A = window.InProtectAuth;
+    if (!A || !A.isLoggedIn()) {
+      window.location.href = "login.html";
+      return;
+    }
+    A.getLauncherDownloadLink().then(function (r) {
+      if (!r.ok) {
+        if (r.error === "no_subscription") {
+          alert("Скачивание лаунчера доступно только с активной подпиской.");
+          return;
+        }
+        if (r.error === "unauthorized") {
+          window.location.replace("login.html");
+          return;
+        }
+        if (r.error === "download_unconfigured") {
+          alert("Файл лаунчера ещё не выложен на сервер. Собери exe: cd lan && npm run dist");
+          return;
+        }
+        alert("Не удалось получить ссылку на лаунчер.");
+        return;
+      }
+      var href = String(r.url || "").trim();
+      if (!href) {
+        alert("Ссылка на лаунчер пустая.");
+        return;
+      }
+      if (!/^https?:\/\//i.test(href) && A.apiUrl) {
+        href = A.apiUrl(href);
+      }
+      window.location.href = href;
+    });
+  }
+
   function applyAuthHeader() {
     var guest = document.getElementById("header-auth-guest");
     var user = document.getElementById("header-auth-user");
     var logout = document.getElementById("header-logout");
+    var dlBtn = document.getElementById("btn-download-launcher");
+    var dlHint = document.getElementById("launcher-dl-hint");
     if (!guest || !user) return;
     var logged = window.InProtectAuth && window.InProtectAuth.isLoggedIn();
     guest.classList.toggle("header-auth--hidden", logged);
     user.classList.toggle("header-auth--hidden", !logged);
     user.setAttribute("aria-hidden", logged ? "false" : "true");
+    if (dlBtn) dlBtn.hidden = !logged;
+    if (dlHint) dlHint.hidden = logged;
     if (logout && !logout._bound) {
       logout._bound = true;
       logout.addEventListener("click", function () {
@@ -217,6 +260,12 @@
         applyAuthHeader();
       });
     }
+  }
+
+  var dlBtnMain = document.getElementById("btn-download-launcher");
+  if (dlBtnMain && !dlBtnMain._bound) {
+    dlBtnMain._bound = true;
+    dlBtnMain.addEventListener("click", downloadLauncherFromSite);
   }
 
   applyLang();

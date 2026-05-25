@@ -284,6 +284,98 @@ button {
   color: var(--muted);
 }
 
+.content-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.sub-status-line {
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sub-status-line--ok {
+  color: #7dcea0;
+}
+
+.sub-status-line--bad {
+  color: #f0a080;
+}
+
+.auth-gate-lead {
+  margin: 0 0 6px;
+}
+
+.auth-api-hint {
+  margin: 0 0 12px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.play-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.download-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.download-overlay.hidden {
+  display: none;
+}
+
+.download-card {
+  width: min(420px, 92vw);
+  padding: 1.5rem 1.35rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: rgba(18, 18, 18, 0.95);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.download-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+
+.dl-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  margin: 1rem 0 0.5rem;
+}
+
+.dl-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #c084fc, #fb7185);
+  transition: width 0.15s ease;
+}
+
+.dl-stats {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .prot-badge {
   margin: 8px 0 0;
   font-size: 11px;
