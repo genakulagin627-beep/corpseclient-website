@@ -26,6 +26,20 @@
   }
 
   function buildWsUrl(token) {
+    var base = "";
+    if (window.InProtectAuth && typeof window.InProtectAuth.getApiBase === "function") {
+      base = window.InProtectAuth.getApiBase() || "";
+    }
+    if (!base && window.INPROTECT_API) {
+      base = String(window.INPROTECT_API).replace(/\/$/, "");
+    }
+    if (base) {
+      try {
+        var u = new URL(base);
+        var wsProto = u.protocol === "https:" ? "wss:" : "ws:";
+        return wsProto + "//" + u.host + "/ws/chat?token=" + encodeURIComponent(token);
+      } catch (e) {}
+    }
     var loc = window.location;
     var proto = loc.protocol === "https:" ? "wss:" : "ws:";
     return proto + "//" + loc.host + "/ws/chat?token=" + encodeURIComponent(token);

@@ -17,7 +17,7 @@
 ## 2. Создать репозиторий на GitHub
 
 1. https://github.com/new  
-2. Имя, например: `corpseclient-website`  
+2. Репозиторий: [genakulagin627-beep/corpseclient-website](https://github.com/genakulagin627-beep/corpseclient-website)  
 3. **Private** (рекомендуется) или Public  
 4. Без README / .gitignore (они уже в проекте)  
 5. **Create repository**
@@ -51,7 +51,7 @@ git commit -m "release: CorpseClient website v1.0.0"
 
 ```powershell
 git branch -M main
-git remote add origin https://github.com/ВАШ_ЛОГИН/ВАШ-РЕПО.git
+git remote add origin https://github.com/genakulagin627-beep/corpseclient-website.git
 git push -u origin main
 ```
 
@@ -62,7 +62,7 @@ git push -u origin main
 
 ```powershell
 git remote remove origin
-git remote add origin https://github.com/ВАШ_ЛОГИН/ВАШ-РЕПО.git
+git remote add origin https://github.com/genakulagin627-beep/corpseclient-website.git
 ```
 
 При первом push GitHub попросит войти (браузер или [Personal Access Token](https://github.com/settings/tokens)).

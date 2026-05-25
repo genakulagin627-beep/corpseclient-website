@@ -18,10 +18,23 @@ const { authRequired, adminRequired } = require("./middleware/auth");
 initDb();
 
 const app = express();
-const port = parseInt(process.env.API_PORT, 10) || 3000;
+const port = parseInt(process.env.PORT || process.env.API_PORT, 10) || 3000;
 const siteRoot = path.resolve(__dirname, "..", "..");
 
-app.use(cors());
+const corsRaw = String(process.env.CORS_ORIGIN || "").trim();
+const corsList = corsRaw
+  ? corsRaw.split(",").map((s) => s.trim()).filter(Boolean)
+  : null;
+app.use(
+  cors(
+    corsList && corsList.length
+      ? {
+          origin: corsList,
+          credentials: true,
+        }
+      : {}
+  )
+);
 app.use(express.json());
 app.use(express.static(siteRoot));
 

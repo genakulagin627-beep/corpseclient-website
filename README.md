@@ -63,4 +63,8 @@ npm run dev:admin
 
 ## GitHub
 
-Как залить репозиторий и что не коммитить — **[GITHUB.md](./GITHUB.md)**.
+Как залить репозиторий — **[GITHUB.md](./GITHUB.md)**.
+
+## Хостинг (сайт на GitHub Pages + API)
+
+Пошагово: **[DEPLOY-HOSTING.md](./DEPLOY-HOSTING.md)** — Pages + бесплатный Render.
