@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Вход — CorpseClient</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <meta name="inprotect-api-base" content="" />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css?v=20260525" />
+    <link rel="stylesheet" href="account.css?v=20260525" />
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+    <div class="bg-glow" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <a class="logo" href="index.html#home">
+        <span class="logo-mark" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 3L4 7v6c0 4.5 3 8.5 8 10 5-1.5 8-5.5 8-10V7l-8-4z" stroke="currentColor" stroke-width="1.75"/></svg>
+        </span>
+        <span class="logo-text">CorpseClient</span>
+      </a>
+      <nav class="nav-main">
+        <a class="nav-link" href="index.html#home"><svg class="nav-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Главная</a>
+        <a class="nav-link" href="index.html#learn"><svg class="nav-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Продукты</a>
+        <a class="nav-link" href="privacy-ru.html"><svg class="nav-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Политика</a>
+        <a class="nav-link" href="terms-ru.html"><svg class="nav-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Условия</a>
+      </nav>
+      <div class="header-actions">
+        <button type="button" class="icon-btn" id="theme-toggle" aria-label="Тема">
+          <svg class="ico-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="ico-sun hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        </button>
+        <a class="btn btn-ghost btn-sm header-btn--active" href="login.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>Войти</a>
+        <a class="btn btn-primary btn-sm" href="register.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>Регистрация</a>
+      </div>
+      <button type="button" class="nav-burger" id="nav-burger" aria-expanded="false"><span></span><span></span><span></span></button>
+    </header>
+
+    <main class="auth-page">
+      <div class="auth-card">
+        <h1 class="auth-title">С возвращением!</h1>
+        <p class="auth-sub">Первый раз на сайте? <a href="register.html">Зарегистрируйтесь</a></p>
+        <form id="login-form" novalidate>
+          <div class="form-field">
+            <label for="email">E-mail</label>
+            <div class="input-wrap">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              <input type="email" id="email" name="email" autocomplete="email" placeholder="name@gmail.com" required />
+            </div>
+            <p class="form-error" id="err-email" aria-live="polite"></p>
+          </div>
+          <div class="form-field">
+            <label for="password">Пароль</label>
+            <div class="input-wrap">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <input type="password" id="password" name="password" autocomplete="current-password" placeholder="••••••••" required />
+            </div>
+            <p class="form-error" id="err-password" aria-live="polite"></p>
+          </div>
+          <button type="submit" class="btn btn-primary btn-lg auth-submit">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+            Войти
+          </button>
+        </form>
+        <div class="auth-divider">или</div>
+        <a class="btn-sec" href="index.html#contact"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Восстановление пароля</a>
+      </div>
+    </main>
+
+    <footer class="site-footer-mega" id="mega-footer"></footer>
+
+    <script src="auth-core.js?v=20260525"></script>
+    <script src="footer-mega.js?v=20260525"></script>
+    <script src="theme-runtime.js?v=20260525"></script>
+    <script src="legal-common.js?v=20260525"></script>
+    <script>
+      (function () {
+        if (window.InProtectAuth && window.InProtectAuth.getToken()) {
+          window.location.replace("profile.html");
+          return;
+        }
+        var form = document.getElementById("login-form");
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var email = document.getElementById("email").value.trim();
+          var password = document.getElementById("password").value;
+          document.getElementById("err-email").textContent = "";
+          document.getElementById("err-password").textContent = "";
+          if (!window.InProtectAuth.isAllowedEmail(email)) {
+            document.getElementById("err-email").textContent =
+              "Укажите почту на разрешённом домене (Gmail, Mail.ru, Yandex и т.д.).";
+            return;
+          }
+          window.InProtectAuth.loginUser(email, password).then(function (res) {
+            if (res.error === "banned") {
+              document.getElementById("err-password").textContent =
+                "Аккаунт заблокирован. Обратитесь в поддержку.";
+              return;
+            }
+            if (res.error === "network") {
+              document.getElementById("err-password").textContent =
+                "Нет связи с сервером. В папке server: npm start и откройте сайт только по адресу http://localhost:3000 (не через другой порт и не file://).";
+              return;
+            }
+            if (res.error) {
+              document.getElementById("err-password").textContent = "Неверный e-mail или пароль.";
+              return;
+            }
+            window.location.href = "profile.html";
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

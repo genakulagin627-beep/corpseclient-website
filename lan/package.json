@@ -1,0 +1,45 @@
+{
+  "name": "client-launcher",
+  "version": "1.0.0",
+  "description": "Лаунчер клиента Minecraft",
+  "main": "main.js",
+  "author": "",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable",
+    "dist:installer": "electron-builder --win nsis",
+    "obfuscate:jar": "node obfuscator/obfuscate.js"
+  },
+  "build": {
+    "appId": "com.client.launcher",
+    "productName": "Launcher",
+    "directories": {
+      "output": "dist"
+    },
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "icon": "assets/verses.png"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0"
+  }
+}
