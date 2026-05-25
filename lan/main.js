@@ -6,7 +6,7 @@ const os = require('os');
 const { spawn } = require('child_process');
 const Store = require('electron-store');
 const prot = require('./prot');
-const { prepareInstance, DEFAULT_MANIFEST } = require('./download-manager');
+const { installMinecraft, prepareLaunch, DEFAULT_MANIFEST } = require('./download-manager');
 const { INPROTECT_ROOT, getInProtectPaths } = require('./paths');
 
 let mainWindow = null;
@@ -266,14 +266,6 @@ function buildLaunchSession(access, entry) {
   };
 }
 
-function resolveJavaExecutable() {
-  if (process.env.JAVA_HOME) {
-    const exe = path.join(process.env.JAVA_HOME, 'bin', 'java.exe');
-    if (fs.existsSync(exe)) return exe;
-  }
-  return 'java';
-}
-
 function spawnDetached(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -366,64 +358,24 @@ async function fetchLauncherManifest() {
   return { ...DEFAULT_MANIFEST };
 }
 
-async function launchPrepared(prepared, access, entry) {
+async function launchPrepared(prepared) {
   const launchPath = prepared.launchPath;
-  if (entry.integritySha256 && String(entry.integritySha256).trim()) {
-    const gate = await prot.assertLaunchAllowed({ ...entry, path: launchPath });
-    if (!gate.ok) {
-      return { ok: false, error: gate.error || 'Прот: запуск отклонён.', code: gate.code };
-    }
-  }
+  const cwd = prepared.gameDir || path.dirname(launchPath);
 
   try {
-    const session = buildLaunchSession(access, { ...entry, path: launchPath });
-    const sessionFiles = writeLaunchSessionFiles(
-      { path: launchPath, id: entry.id },
-      session
-    );
-    const launchArgs = ['--inprotect-session', sessionFiles.jsonPath];
-    const launchEnv = {
-      ...process.env,
-      INPROTECT_SESSION_PATH: sessionFiles.jsonPath,
-      INPROTECT_SESSION_SIG_PATH: sessionFiles.sigPath,
-      INPROTECT_BRIDGE_SECRET: getBridgeSecret(),
-      INPROTECT_UID: String(session.user.uid ?? ''),
-      INPROTECT_NICK: String(session.user.displayName || ''),
-      INPROTECT_EMAIL: String(session.user.email || ''),
-      INPROTECT_ROLE: String(session.user.role || ''),
-      INPROTECT_HAS_SUB: session.hasSubscription ? '1' : '0',
-      INPROTECT_SUB_UNTIL: String(session.subscriptionUntil || ''),
-    };
-    const cwd = prepared.gameDir || prepared.installDir;
-
-    if (prepared.launchKind === 'jar') {
-      const java = resolveJavaExecutable();
-      await spawnDetached(java, ['-jar', launchPath, ...launchArgs], {
-        cwd: path.dirname(launchPath),
-        env: launchEnv,
-      });
-    } else if (prepared.launchKind === 'bat') {
-      await spawnDetached('cmd.exe', ['/c', launchPath, ...launchArgs], { cwd, env: launchEnv });
+    if (prepared.launchKind === 'bat') {
+      await spawnDetached('cmd.exe', ['/c', launchPath], { cwd, env: process.env });
     } else {
-      await spawnDetached(launchPath, launchArgs, { cwd, env: launchEnv });
+      await spawnDetached(launchPath, [], { cwd, env: process.env });
     }
     return {
       ok: true,
-      sessionPath: sessionFiles.jsonPath,
       installDir: prepared.installDir,
       launchPath,
       launchKind: prepared.launchKind,
     };
   } catch (e) {
-    const msg = String(e.message || e);
-    if (e.code === 'ENOENT' && /java/i.test(msg)) {
-      return {
-        ok: false,
-        error: 'Java не найдена. Установи JDK 17+ и перезапусти лаунчер.',
-        installDir: INPROTECT_ROOT,
-      };
-    }
-    return { ok: false, error: msg, installDir: INPROTECT_ROOT };
+    return { ok: false, error: String(e.message || e), installDir: INPROTECT_ROOT };
   }
 }
 
@@ -511,6 +463,23 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
+  ipcMain.handle('install-minecraft', async () => {
+    const access = await getLauncherProfileByToken(getAuthToken());
+    if (!access.ok) return { ok: false, error: access.error };
+    if (!access.hasSubscription) {
+      return { ok: false, error: 'Подписка не активна.' };
+    }
+    try {
+      const manifest = await fetchLauncherManifest();
+      return await installMinecraft(manifest, sendDownloadProgress, {
+        authToken: getAuthToken(),
+      });
+    } catch (e) {
+      sendDownloadProgress({ phase: 'Ошибка', received: 0, total: 0, percent: 0 });
+      return { ok: false, error: String(e.message || e) };
+    }
+  });
+
   ipcMain.handle('launch', async (_e, versionId) => {
     const access = await getLauncherProfileByToken(getAuthToken());
     if (!access.ok) {
@@ -526,16 +495,18 @@ app.whenReady().then(() => {
     if (versionUsesCloudInstall(v)) {
       try {
         const manifest = await fetchLauncherManifest();
-        const prepared = await prepareInstance(manifest, sendDownloadProgress, {
+        const prepared = await prepareLaunch(manifest, sendDownloadProgress, {
           authToken: getAuthToken(),
-          forceReinstall: !!_e?.forceReinstall,
         });
-        const launched = await launchPrepared(prepared, access, v);
-        if (launched.ok) launched.cached = !!prepared.cached;
+        const launched = await launchPrepared(prepared);
+        if (launched.ok) {
+          launched.cached = !!prepared.cached;
+          launched.modPath = prepared.modPath;
+        }
         return launched;
       } catch (e) {
         sendDownloadProgress({ phase: 'Ошибка', received: 0, total: 0, percent: 0 });
-        return { ok: false, error: String(e.message || e) };
+        return { ok: false, error: String(e.message || e), installDir: INPROTECT_ROOT };
       }
     }
 

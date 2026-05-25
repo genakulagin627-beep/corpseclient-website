@@ -453,6 +453,18 @@ button {
   font-weight: 500;
 }
 
+.version-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.version-card-actions .btn-sm {
+  padding: 8px 12px;
+  font-size: 12px;
+  border-radius: 10px;
+}
+
 .play-btn {
   width: 44px;
   height: 44px;

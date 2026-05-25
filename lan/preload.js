@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('launcher', {
   getConfig: () => ipcRenderer.invoke('config-get'),
   saveConfig: (cfg) => ipcRenderer.invoke('config-save', cfg),
   launch: (versionId) => ipcRenderer.invoke('launch', versionId),
+  installMinecraft: () => ipcRenderer.invoke('install-minecraft'),
   authLogin: (email, password) => ipcRenderer.invoke('auth-login', { email, password }),
   authRegister: (nickname, email, password) => ipcRenderer.invoke('auth-register', { nickname, email, password }),
   authStatus: () => ipcRenderer.invoke('auth-status'),

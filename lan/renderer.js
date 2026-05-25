@@ -274,21 +274,50 @@ function renderCards() {
     const bg = cardBackgroundStyle(v);
     if (bg) el.style.setProperty('--card-bg-img', bg);
 
+    const cloud = versionUsesCloudInstall(v);
     el.innerHTML = `
       <div class="version-card-body">
         <div class="version-titles">
           <h2>${escapeHtml(v.title || v.id)}</h2>
           <div class="tag">${escapeHtml(v.tag || 'Stable')}</div>
         </div>
-        <button type="button" class="play-btn" data-version="${escapeAttr(v.id)}" title="Запуск" aria-label="Play">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-        </button>
+        <div class="version-card-actions">
+          ${
+            cloud
+              ? `<button type="button" class="btn secondary btn-sm dl-mc-btn" data-version="${escapeAttr(v.id)}" title="Скачать Minecraft">Скачать</button>`
+              : ''
+          }
+          <button type="button" class="play-btn" data-version="${escapeAttr(v.id)}" title="Играть" aria-label="Play">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+        </div>
       </div>
     `;
     root.appendChild(el);
   });
 
   const canPlay = authState && authState.ok && authState.hasSubscription;
+
+  root.querySelectorAll('.dl-mc-btn').forEach((btn) => {
+    btn.disabled = !canPlay;
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!canPlay) {
+        showToast('Нет активной подписки.', true);
+        return;
+      }
+      showDownloadOverlay(true);
+      hideLoader();
+      try {
+        const res = await window.launcher.installMinecraft();
+        if (res.ok) showToast(res.cached ? 'Minecraft уже установлен' : 'Minecraft 1.21.4 скачан и распакован');
+        else showToast(res.error || 'Ошибка загрузки', true);
+      } finally {
+        showDownloadOverlay(false);
+      }
+    });
+  });
+
   root.querySelectorAll('.play-btn').forEach((btn) => {
     btn.disabled = !canPlay;
     btn.title = canPlay ? 'Запуск' : 'Нужна активная подписка';
@@ -306,14 +335,7 @@ function renderCards() {
         try {
           const res = await window.launcher.launch(id);
           if (res.ok) {
-            const dir = res.installDir || 'C:\\InProtect';
-            showToast(
-              res.cached
-                ? `Запуск без повторной загрузки (${dir})`
-                : `Установлено и запущено (${dir})`,
-              false
-            );
-            if (!res.cached) setTimeout(() => window.launcher.openInProtectFolder?.(), 800);
+            showToast('Запускаем Minecraft 1.21.4…');
           } else {
             showToast(res.error || 'Ошибка запуска', true);
             if (res.installDir) setTimeout(() => window.launcher.openInProtectFolder?.(), 600);

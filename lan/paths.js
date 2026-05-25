@@ -2,22 +2,20 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-/** Корневая папка клиента на диске C: */
 const INPROTECT_ROOT = path.join('C:', 'InProtect');
 const INSTALL_STATE_FILE = 'install-state.json';
-const MIN_JAR_BYTES = 40_000;
 const MIN_ZIP_BYTES = 50_000;
+const MIN_MOD_BYTES = 20_000;
 
 function getInProtectPaths() {
   const root = INPROTECT_ROOT;
-  const game = path.join(root, 'game');
-  const mods = path.join(root, 'mods');
-  const clientJar = path.join(root, 'corpse-1.0.0.jar');
-  const packZip = path.join(root, 'pack.zip');
-  for (const dir of [root, game, mods]) {
+  const minecraft = path.join(root, 'minecraft');
+  const packZip = path.join(root, '1.21.4.zip');
+  const modCache = path.join(root, 'corpse-1.0.0.jar');
+  for (const dir of [root, minecraft]) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  return { root, game, mods, clientJar, packZip };
+  return { root, minecraft, packZip, modCache };
 }
 
 function resetDir(dir) {
@@ -51,14 +49,13 @@ function dirHasContent(dir) {
   return false;
 }
 
-function manifestFingerprint(packUrl, modUrl) {
-  return crypto.createHash('sha256').update(`${packUrl}|${modUrl}`, 'utf8').digest('hex').slice(0, 24);
+function packFingerprint(packUrl) {
+  return crypto.createHash('sha256').update(String(packUrl), 'utf8').digest('hex').slice(0, 24);
 }
 
 function readInstallState(root) {
-  const p = path.join(root, INSTALL_STATE_FILE);
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
+    return JSON.parse(fs.readFileSync(path.join(root, INSTALL_STATE_FILE), 'utf8'));
   } catch {
     return null;
   }
@@ -68,21 +65,43 @@ function writeInstallState(root, data) {
   fs.writeFileSync(path.join(root, INSTALL_STATE_FILE), JSON.stringify(data, null, 2), 'utf8');
 }
 
-function isInstallReady(paths) {
-  return fileOk(paths.clientJar, MIN_JAR_BYTES) && dirHasContent(paths.game);
+function resolveMinecraftRoot(minecraftDir) {
+  if (!fs.existsSync(minecraftDir)) return minecraftDir;
+  let entries;
+  try {
+    entries = fs.readdirSync(minecraftDir);
+  } catch {
+    return minecraftDir;
+  }
+  if (entries.length === 1) {
+    const sub = path.join(minecraftDir, entries[0]);
+    try {
+      if (fs.statSync(sub).isDirectory()) {
+        const hasMods = fs.existsSync(path.join(sub, 'mods'));
+        const hasMc = fs.existsSync(path.join(sub, '.minecraft'));
+        if (hasMods || hasMc) return sub;
+      }
+    } catch (_) {}
+  }
+  return minecraftDir;
+}
+
+function isMinecraftInstalled(paths) {
+  const mcRoot = resolveMinecraftRoot(paths.minecraft);
+  return dirHasContent(mcRoot);
 }
 
 module.exports = {
   INPROTECT_ROOT,
-  INSTALL_STATE_FILE,
-  MIN_JAR_BYTES,
   MIN_ZIP_BYTES,
+  MIN_MOD_BYTES,
   getInProtectPaths,
   resetDir,
   fileOk,
   dirHasContent,
-  manifestFingerprint,
+  packFingerprint,
   readInstallState,
   writeInstallState,
-  isInstallReady,
+  resolveMinecraftRoot,
+  isMinecraftInstalled,
 };

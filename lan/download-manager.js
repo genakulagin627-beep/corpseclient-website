@@ -7,27 +7,24 @@ const {
   getInProtectPaths,
   resetDir,
   fileOk,
-  dirHasContent,
   manifestFingerprint,
+  packFingerprint,
   readInstallState,
   writeInstallState,
-  isInstallReady,
-  MIN_JAR_BYTES,
+  resolveMinecraftRoot,
+  isMinecraftInstalled,
   MIN_ZIP_BYTES,
+  MIN_MOD_BYTES,
 } = require('./paths');
-const {
-  resolveWorkuploadDownloadUrl,
-  isDirectDownloadUrl,
-} = require('../lib/workupload');
-
-const UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
-
+const { resolveWorkuploadDownloadUrl, isDirectDownloadUrl } = require('../lib/workupload');
 const {
   DEFAULT_MC_PACK_URL,
   DEFAULT_MOD_JAR_URL,
   normalizeDownloadUrl,
 } = require('../lib/download-url');
+
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
 const DEFAULT_MANIFEST = {
   minecraftPackUrl: DEFAULT_MC_PACK_URL,
@@ -51,12 +48,7 @@ function fetchWithRedirects(url, maxRedirects = 12, extraHeaders = {}) {
     const req = lib.get(
       parsed,
       {
-        headers: {
-          'User-Agent': UA,
-          Accept: '*/*',
-          Referer: 'https://workupload.com/',
-          ...extraHeaders,
-        },
+        headers: { 'User-Agent': UA, Accept: '*/*', Referer: 'https://workupload.com/', ...extraHeaders },
       },
       (res) => {
         const code = res.statusCode || 0;
@@ -64,18 +56,14 @@ function fetchWithRedirects(url, maxRedirects = 12, extraHeaders = {}) {
           res.resume();
           const next = new URL(res.headers.location, parsed).href;
           const nextHeaders = { ...extraHeaders };
-          if (new URL(next).host !== parsed.host) {
-            delete nextHeaders.Authorization;
-          }
+          if (new URL(next).host !== parsed.host) delete nextHeaders.Authorization;
           return resolve(fetchWithRedirects(next, maxRedirects - 1, nextHeaders));
         }
         resolve(res);
       }
     );
     req.on('error', reject);
-    req.setTimeout(180000, () => {
-      req.destroy(new Error('timeout'));
-    });
+    req.setTimeout(180000, () => req.destroy(new Error('timeout')));
   });
 }
 
@@ -104,20 +92,7 @@ async function readJsonErrorBody(res) {
 
 async function resolveWorkuploadUrl(pageUrl) {
   const { downloadUrl } = await resolveWorkuploadDownloadUrl(pageUrl);
-  const res = await fetchWithRedirects(downloadUrl);
-  return { res, finalUrl: downloadUrl };
-}
-
-function formatBytes(n) {
-  if (!n || n < 0) return '0 B';
-  const u = ['B', 'KB', 'MB', 'GB'];
-  let v = n;
-  let i = 0;
-  while (v >= 1024 && i < u.length - 1) {
-    v /= 1024;
-    i += 1;
-  }
-  return `${v.toFixed(i ? 1 : 0)} ${u[i]}`;
+  return fetchWithRedirects(downloadUrl);
 }
 
 function downloadResponseToFile(res, destPath, label, onProgress) {
@@ -135,7 +110,7 @@ function downloadResponseToFile(res, destPath, label, onProgress) {
       });
     });
     res.pipe(file);
-    file.on('finish', () => file.close(() => resolve({ bytes: done, total })));
+    file.on('finish', () => file.close(() => resolve()));
     file.on('error', (e) => {
       file.close();
       reject(e);
@@ -153,17 +128,13 @@ async function downloadUrlToFile(sourceUrl, destPath, label, onProgress, opts = 
   }
   let res;
   if (/workupload\.com\/file\//i.test(sourceUrl)) {
-    const resolved = await resolveWorkuploadUrl(sourceUrl);
-    res = resolved.res;
-  } else if (isDirectDownloadUrl(sourceUrl)) {
-    res = await fetchWithRedirects(sourceUrl, 12, headers);
+    res = await resolveWorkuploadUrl(sourceUrl);
   } else {
     res = await fetchWithRedirects(sourceUrl, 12, headers);
   }
   const code = res.statusCode || 0;
   if (code === 502 || code === 503) {
-    const msg = await readJsonErrorBody(res);
-    throw new Error(msg || `Сервер не отдал файл (${code})`);
+    throw new Error((await readJsonErrorBody(res)) || `Ошибка сервера (${code})`);
   }
   if (code >= 400) {
     res.resume();
@@ -172,9 +143,7 @@ async function downloadUrlToFile(sourceUrl, destPath, label, onProgress, opts = 
   const ct = String(res.headers['content-type'] || '').toLowerCase();
   if (ct.includes('text/html') && !/\/api\/launcher\//i.test(sourceUrl)) {
     res.resume();
-    throw new Error(
-      'Получена HTML-страница вместо файла. Задай на Render прямые MC_PACK_URL / MOD_JAR_URL или залей файлы в uploads/game/.'
-    );
+    throw new Error('Скачана страница вместо файла. Проверь ссылку (Dropbox: dl=1).');
   }
   return downloadResponseToFile(res, destPath, label, onProgress);
 }
@@ -198,7 +167,15 @@ function extractZipWin(zipPath, destDir) {
   });
 }
 
-function walkFiles(dir, depth = 0, maxDepth = 8) {
+function sniffZip(zipPath) {
+  const head = Buffer.alloc(4);
+  const fd = fs.openSync(zipPath, 'r');
+  fs.readSync(fd, head, 0, 4, 0);
+  fs.closeSync(fd);
+  return head[0] === 0x50 && head[1] === 0x4b;
+}
+
+function walkFiles(dir, depth = 0, maxDepth = 10) {
   if (depth > maxDepth || !fs.existsSync(dir)) return [];
   const out = [];
   for (const name of fs.readdirSync(dir)) {
@@ -215,25 +192,9 @@ function walkFiles(dir, depth = 0, maxDepth = 8) {
   return out;
 }
 
-function findLaunchExecutable(rootDir) {
-  const files = walkFiles(rootDir);
-  const jar =
-    files.find((f) => /corpse.*\.jar$/i.test(f)) ||
-    files.find((f) => /fabric.*\.jar$/i.test(f) && !/sources/i.test(f));
-  if (jar) return { path: jar, kind: 'jar' };
-  const priority = [/javaw\.exe$/i, /minecraft\.exe$/i, /fabric.*\.exe$/i, /\.exe$/i];
-  for (const re of priority) {
-    const hit = files.find((f) => re.test(f) && !/unins|setup|install|update/i.test(f));
-    if (hit) return { path: hit, kind: 'exe' };
-  }
-  const bat = files.find((f) => /\.bat$/i.test(f) && /start|run|launch|play/i.test(f));
-  if (bat) return { path: bat, kind: 'bat' };
-  return null;
-}
-
-function findModsDir(rootDir) {
-  function walkDirs(dir, depth) {
-    if (depth > 8 || !fs.existsSync(dir)) return null;
+function findModsDir(mcRoot) {
+  function walk(dir, depth) {
+    if (depth > 10 || !fs.existsSync(dir)) return null;
     for (const name of fs.readdirSync(dir)) {
       const full = path.join(dir, name);
       let st;
@@ -244,90 +205,119 @@ function findModsDir(rootDir) {
       }
       if (!st.isDirectory()) continue;
       if (name.toLowerCase() === 'mods') return full;
-      const inner = walkDirs(full, depth + 1);
+      const inner = walk(full, depth + 1);
       if (inner) return inner;
     }
     return null;
   }
-  const found = walkDirs(rootDir, 0);
+  const found = walk(mcRoot, 0);
   if (found) return found;
-  const guessed = path.join(rootDir, 'mods');
+  const guessed = path.join(mcRoot, 'mods');
   fs.mkdirSync(guessed, { recursive: true });
   return guessed;
 }
 
-function syncJarCopies(paths) {
-  const modInMods = path.join(paths.mods, 'corpse-1.0.0.jar');
-  try {
-    fs.copyFileSync(paths.clientJar, modInMods);
-  } catch (_) {}
-  try {
-    const modsInGame = findModsDir(paths.game);
-    fs.copyFileSync(paths.clientJar, path.join(modsInGame, 'corpse-1.0.0.jar'));
-  } catch (_) {}
-}
-
-function buildLaunchResult(paths) {
-  const modInMods = path.join(paths.mods, 'corpse-1.0.0.jar');
-  let launchPath = paths.clientJar;
-  let launchKind = 'jar';
-  const alt = findLaunchExecutable(paths.game);
-  if (!fileOk(launchPath, MIN_JAR_BYTES) && alt) {
-    launchPath = alt.path;
-    launchKind = alt.kind;
+/** Запуск именно Minecraft / лаунчера из сборки — не mod.jar */
+function findMinecraftLaunch(mcRoot) {
+  const files = walkFiles(mcRoot);
+  const bat = files.find(
+    (f) => /\.bat$/i.test(f) && /start|launch|play|run|minecraft|fabric/i.test(path.basename(f))
+  );
+  if (bat) return { path: bat, kind: 'bat' };
+  const exePriority = [/minecraft.*launcher/i, /minecraft\.exe/i, /fabric.*\.exe/i, /prism/i, /hmcl/i];
+  for (const re of exePriority) {
+    const hit = files.find((f) => re.test(f) && !/unins|setup|install|update/i.test(f));
+    if (hit) return { path: hit, kind: 'exe' };
   }
-  if (!fs.existsSync(launchPath)) {
-    throw new Error(`Файл клиента не найден в ${paths.root}.`);
+  const anyExe = files.find((f) => /\.exe$/i.test(f) && !/unins|setup|install|update|java/i.test(f));
+  if (anyExe) return { path: anyExe, kind: 'exe' };
+  const javaw = files.find((f) => /javaw\.exe$/i.test(f));
+  if (javaw) return { path: javaw, kind: 'exe' };
+  return null;
+}
+
+async function extractFabricPack(paths, packUrl, onProgress) {
+  if (!fileOk(paths.packZip, MIN_ZIP_BYTES)) {
+    throw new Error('Нет 1.21.4.zip — сначала нажми «Скачать Minecraft».');
   }
-  return {
-    installDir: paths.root,
-    gameDir: paths.game,
-    launchPath,
-    launchKind,
-    clientJarPath: paths.clientJar,
-    modPath: modInMods,
-    packZipPath: paths.packZip,
-    cached: true,
-  };
+  if (!sniffZip(paths.packZip)) {
+    throw new Error('1.21.4.zip повреждён или это не zip. Скачай заново.');
+  }
+  emitProgress(onProgress, {
+    phase: 'Распаковка Fabric 1.21.4…',
+    received: 0,
+    total: 0,
+    percent: -1,
+  });
+  resetDir(paths.minecraft);
+  await extractZipWin(paths.packZip, paths.minecraft);
 }
 
-function sniffPackFile(packPath) {
-  const head = Buffer.alloc(256);
-  const fd = fs.openSync(packPath, 'r');
-  fs.readSync(fd, head, 0, 256, 0);
-  fs.closeSync(fd);
-  const isZip = head[0] === 0x50 && head[1] === 0x4b;
-  const sniff = head.slice(0, 120).toString('utf8').toLowerCase();
-  const looksHtml =
-    head[0] === 0x3c ||
-    (head[0] === 0xef && head[1] === 0xbb) ||
-    sniff.includes('<!doctype') ||
-    sniff.includes('<html');
-  return { isZip, looksHtml };
-}
+/**
+ * Только Minecraft: скачать zip + распаковать в C:\InProtect\minecraft
+ */
+async function installMinecraft(manifest, onProgress, opts = {}) {
+  const paths = getInProtectPaths();
+  const packUrl = normalizeDownloadUrl(
+    String(manifest.minecraftPackUrl || DEFAULT_MANIFEST.minecraftPackUrl).trim()
+  );
+  const fp = packFingerprint(packUrl);
+  const force = !!opts.forceReinstall;
+  const state = readInstallState(paths.root);
+  const dlOpts = { authToken: opts.authToken };
 
-async function extractPackToGame(packZip, game, packUrl, onProgress) {
-  const { isZip, looksHtml } = sniffPackFile(packZip);
-  if (looksHtml) {
-    throw new Error(
-      'Скачана страница вместо zip. Проверь MC_PACK_URL на Render (Dropbox: dl=1).'
+  if (!force && state?.packFingerprint === fp && isMinecraftInstalled(paths)) {
+    emitProgress(onProgress, { phase: 'Minecraft уже установлен', percent: 100, received: 1, total: 1 });
+    return { ok: true, installDir: paths.root, cached: true };
+  }
+
+  if (force || !fileOk(paths.packZip, MIN_ZIP_BYTES)) {
+    await downloadUrlToFile(
+      packUrl,
+      paths.packZip,
+      'Скачивание Minecraft 1.21.4 Fabric…',
+      onProgress,
+      dlOpts
     );
-  }
-  if (isZip) {
-    emitProgress(onProgress, {
-      phase: 'Распаковка в C:\\InProtect\\game…',
-      received: 0,
-      total: 0,
-      percent: -1,
-    });
-    await extractZipWin(packZip, game);
   } else {
-    const ext = packUrl.toLowerCase().includes('.jar') ? '.jar' : '.exe';
-    fs.copyFileSync(packZip, path.join(game, `client_pack${ext}`));
+    emitProgress(onProgress, { phase: 'Архив уже скачан', percent: 100, received: 1, total: 1 });
   }
+
+  await extractFabricPack(paths, packUrl, onProgress);
+
+  writeInstallState(paths.root, {
+    packFingerprint: fp,
+    packUrl,
+    installedAt: new Date().toISOString(),
+  });
+
+  emitProgress(onProgress, { phase: 'Minecraft 1.21.4 готов', percent: 100, received: 1, total: 1 });
+  return { ok: true, installDir: paths.root, cached: false };
 }
 
-async function prepareInstance(manifest, onProgress, opts = {}) {
+async function ensureModInMods(paths, modUrl, onProgress, dlOpts) {
+  if (!fileOk(paths.modCache, MIN_MOD_BYTES)) {
+    await downloadUrlToFile(
+      modUrl,
+      paths.modCache,
+      'Скачивание мода…',
+      onProgress,
+      dlOpts
+    );
+  } else {
+    emitProgress(onProgress, { phase: 'Мод уже скачан', percent: 100, received: 1, total: 1 });
+  }
+  const mcRoot = resolveMinecraftRoot(paths.minecraft);
+  const modsDir = findModsDir(mcRoot);
+  const modDest = path.join(modsDir, 'corpse-1.0.0.jar');
+  fs.copyFileSync(paths.modCache, modDest);
+  return { mcRoot, modsDir, modDest };
+}
+
+/**
+ * Play: установить MC если нет → мод в mods → запуск .exe/.bat из сборки
+ */
+async function prepareLaunch(manifest, onProgress, opts = {}) {
   const paths = getInProtectPaths();
   const packUrl = normalizeDownloadUrl(
     String(manifest.minecraftPackUrl || DEFAULT_MANIFEST.minecraftPackUrl).trim()
@@ -335,69 +325,38 @@ async function prepareInstance(manifest, onProgress, opts = {}) {
   const modUrl = normalizeDownloadUrl(
     String(manifest.modJarUrl || DEFAULT_MANIFEST.modJarUrl).trim()
   );
-  const fingerprint = manifestFingerprint(packUrl, modUrl);
   const dlOpts = { authToken: opts.authToken };
-  const force = !!opts.forceReinstall;
-  const state = readInstallState(paths.root);
 
-  if (!force && state?.fingerprint === fingerprint && isInstallReady(paths)) {
-    emitProgress(onProgress, {
-      phase: 'Уже установлено — запуск…',
-      received: 1,
-      total: 1,
-      percent: 100,
-    });
-    syncJarCopies(paths);
-    const result = buildLaunchResult(paths);
-    result.cached = true;
-    return result;
+  if (!isMinecraftInstalled(paths)) {
+    emitProgress(onProgress, { phase: 'Устанавливаем Minecraft…', percent: 0, received: 0, total: 0 });
+    await installMinecraft(manifest, onProgress, opts);
   }
 
-  const needJar = force || !fileOk(paths.clientJar, MIN_JAR_BYTES);
-  const needGame = force || !dirHasContent(paths.game);
-  const needPackDownload = needGame && (force || !fileOk(paths.packZip, MIN_ZIP_BYTES));
+  emitProgress(onProgress, { phase: 'Кладём мод в mods…', percent: 0, received: 0, total: 0 });
+  const { mcRoot, modDest } = await ensureModInMods(paths, modUrl, onProgress, dlOpts);
 
-  if (needJar) {
-    emitProgress(onProgress, { phase: 'Скачивание мода (jar)…', received: 0, total: 0, percent: 0 });
-    await downloadUrlToFile(modUrl, paths.clientJar, 'Скачивание corpse-1.0.0.jar…', onProgress, dlOpts);
-  } else {
-    emitProgress(onProgress, { phase: 'Мод уже на диске C:\\InProtect', received: 1, total: 1, percent: 100 });
-  }
-  syncJarCopies(paths);
-
-  if (needPackDownload) {
-    await downloadUrlToFile(packUrl, paths.packZip, 'Скачивание сборки Fabric…', onProgress, dlOpts);
-  } else if (needGame && fileOk(paths.packZip, MIN_ZIP_BYTES)) {
-    emitProgress(onProgress, { phase: 'Сборка уже скачана', received: 1, total: 1, percent: 100 });
+  const launch = findMinecraftLaunch(mcRoot);
+  if (!launch) {
+    throw new Error(
+      'В сборке нет Minecraft Launcher (.exe) или start.bat. Проверь содержимое 1.21.4.zip.'
+    );
   }
 
-  if (needGame) {
-    if (!fileOk(paths.packZip, MIN_ZIP_BYTES)) {
-      throw new Error('Нет pack.zip для распаковки. Удали C:\\InProtect\\install-state.json и нажми Play снова.');
-    }
-    resetDir(paths.game);
-    await extractPackToGame(paths.packZip, paths.game, packUrl, onProgress);
-  } else {
-    emitProgress(onProgress, { phase: 'Сборка уже распакована', received: 1, total: 1, percent: 100 });
-  }
-
-  writeInstallState(paths.root, {
-    fingerprint,
-    packUrl,
-    modUrl,
-    installedAt: new Date().toISOString(),
-  });
-
-  emitProgress(onProgress, { phase: 'Запуск…', received: 1, total: 1, percent: 100 });
-  const result = buildLaunchResult(paths);
-  result.cached = false;
-  return result;
+  emitProgress(onProgress, { phase: 'Запуск Minecraft…', percent: 100, received: 1, total: 1 });
+  return {
+    installDir: paths.root,
+    gameDir: mcRoot,
+    launchPath: launch.path,
+    launchKind: launch.kind,
+    modPath: modDest,
+    cached: isMinecraftInstalled(paths),
+  };
 }
 
 module.exports = {
   DEFAULT_MANIFEST,
-  formatBytes,
-  prepareInstance,
+  installMinecraft,
+  prepareLaunch,
   downloadUrlToFile,
   getInProtectPaths,
 };

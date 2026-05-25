@@ -1,51 +1,26 @@
-# Папка C:\InProtect
+# C:\InProtect — Minecraft 1.21.4 Fabric
 
-Лаунчер качает клиент **на диск C:** в фиксированную папку (не в AppData).
+## Кнопки в лаунчере
 
-## Структура
+| Кнопка | Действие |
+|--------|----------|
+| **Скачать** | Один раз: качает `1.21.4.zip` и распаковывает в `C:\InProtect\minecraft` |
+| **Играть** | Кладёт `corpse-1.0.0.jar` в папку `mods` и запускает Minecraft из сборки |
+
+Повторно Minecraft **не качается**, если уже установлен.
+
+## Папки
 
 ```
 C:\InProtect\
-  corpse-1.0.0.jar      ← мод/клиент (запускается через java -jar)
-  pack.zip              ← скачанная сборка Fabric
-  game\                 ← распакованный 1.21.4.zip
-  mods\                 ← копия jar для Fabric
-  inprotect-session.json
-  inprotect-session.sig
+  1.21.4.zip           ← архив (кэш)
+  minecraft\           ← распакованный Fabric
+  corpse-1.0.0.jar     ← кэш мода
+  install-state.json
 ```
 
-## Как запускается Play
+Мод при запуске копируется в `minecraft\...\mods\corpse-1.0.0.jar`.
 
-**Первый раз:** скачивание jar + zip, распаковка в `game\`, запуск.
+## Переустановить
 
-**Повторный Play:** если всё уже в `C:\InProtect`, **повторно не качает** — сразу `java -jar`.
-
-Состояние хранится в `install-state.json` (ссылки на файлы). Если сменили URL на Render — удали этот файл или папку `game`, чтобы переустановить.
-
-1. Скачать `corpse-1.0.0.jar` (один раз).
-2. Скачать и распаковать `1.21.4.zip` в `game\` (один раз).
-3. Запустить: `java -jar C:\InProtect\corpse-1.0.0.jar`
-
-## Нужна Java
-
-Установи **JDK 17+** (или JRE). В PATH должна работать команда:
-
-```powershell
-java -version
-```
-
-## Если «ничего не запускается»
-
-- Открой `C:\InProtect` в проводнике — там должны быть jar и папка `game`.
-- Проверь Java в терминале.
-- Вручную:
-
-```powershell
-cd C:\InProtect
-java -jar corpse-1.0.0.jar
-```
-
-## Render (ссылки)
-
-- `MC_PACK_URL` — zip сборки (Dropbox `dl=1`)
-- `MOD_JAR_URL` — jar мода (Dropbox `dl=1`)
+Удали `C:\InProtect` или только `install-state.json` + `minecraft`, потом снова **Скачать**.
